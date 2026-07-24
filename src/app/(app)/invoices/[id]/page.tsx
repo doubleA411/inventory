@@ -1,0 +1,222 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { requireRole } from "@/lib/auth";
+import { getInvoiceFull, displayInvoiceStatus } from "@/lib/billing-queries";
+import { Badge } from "@/components/ui";
+import { fmtMoney, fmtDate } from "@/lib/utils";
+import { amountInWords } from "@/lib/tax";
+import { INVOICE_STATUS_META } from "@/lib/labels";
+import { ArrowLeft, Pencil, Printer } from "lucide-react";
+import { PaymentForm } from "./payment-form";
+import { InvoiceActions } from "./invoice-actions";
+
+export default async function InvoiceViewPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { organization, role } = await requireRole("admin");
+  const { id } = await params;
+  const data = await getInvoiceFull(organization.id, id);
+  if (!data) notFound();
+  const { invoice, items, customer, payments } = data;
+  const cur = organization.currency;
+  const approved = !!invoice.approvedAt;
+  const isOwner = role === "owner";
+
+  const st = displayInvoiceStatus(invoice);
+  const meta = INVOICE_STATUS_META[st];
+  const paid = Number(invoice.amountPaid);
+  const total = Number(invoice.total);
+  const due = total - paid;
+  const gstEnabled = invoice.docType === "tax_invoice";
+  const intraState =
+    !organization.stateCode || invoice.placeOfSupplyStateCode === organization.stateCode;
+
+  return (
+    <div>
+      <Link
+        href="/invoices"
+        className="mb-4 inline-flex items-center gap-1.5 text-sm text-(--color-muted) hover:text-(--color-fg)"
+      >
+        <ArrowLeft className="h-4 w-4" /> Invoices
+      </Link>
+
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight">{invoice.number}</h1>
+            <Badge tone={meta.tone}>{meta.label}</Badge>
+          </div>
+          <div className="mt-1 text-sm text-(--color-muted)">
+            {gstEnabled ? "Tax Invoice" : "Bill of Supply"} ·{" "}
+            {customer?.name ?? "Walk-in"} · {fmtDate(invoice.issueDate)}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {approved ? (
+            <Link href={`/print/invoice/${id}`} className="btn-primary">
+              <Printer className="h-4 w-4" /> Print
+            </Link>
+          ) : (
+            <button className="btn-primary" disabled title="Needs owner approval first">
+              <Printer className="h-4 w-4" /> Print
+            </button>
+          )}
+          <Link href={`/invoices/${id}/edit`} className="btn-outline">
+            <Pencil className="h-4 w-4" /> Edit
+          </Link>
+          <InvoiceActions
+            id={id}
+            status={invoice.status}
+            approved={approved}
+            isOwner={isOwner}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Items + totals */}
+        <div className="space-y-6 lg:col-span-2">
+          <div className="card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
+                    <th className="px-4 py-2 font-medium">Item</th>
+                    <th className="px-4 py-2 text-right font-medium">Qty</th>
+                    <th className="px-4 py-2 text-right font-medium">Rate</th>
+                    {gstEnabled && <th className="px-4 py-2 text-right font-medium">Tax%</th>}
+                    <th className="px-4 py-2 text-right font-medium">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-(--color-border)">
+                  {items.map((i) => (
+                    <tr key={i.id}>
+                      <td className="px-4 py-2">
+                        {i.description}
+                        {i.hsnSac && (
+                          <span className="ml-2 text-xs text-(--color-muted)">{i.hsnSac}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums">
+                        {Number(i.quantity)} {i.unit ?? ""}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums">{fmtMoney(i.rate, cur)}</td>
+                      {gstEnabled && (
+                        <td className="px-4 py-2 text-right tabular-nums">{Number(i.taxRate)}%</td>
+                      )}
+                      <td className="px-4 py-2 text-right tabular-nums">
+                        {fmtMoney(i.taxableValue, cur)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end border-t border-(--color-border) p-4">
+              <table className="text-sm">
+                <tbody>
+                  <tr>
+                    <td className="pr-8 text-(--color-muted)">Subtotal</td>
+                    <td className="text-right tabular-nums">{fmtMoney(invoice.subtotal, cur)}</td>
+                  </tr>
+                  {gstEnabled && intraState && (
+                    <>
+                      <tr>
+                        <td className="pr-8 text-(--color-muted)">CGST</td>
+                        <td className="text-right tabular-nums">{fmtMoney(invoice.cgst, cur)}</td>
+                      </tr>
+                      <tr>
+                        <td className="pr-8 text-(--color-muted)">SGST</td>
+                        <td className="text-right tabular-nums">{fmtMoney(invoice.sgst, cur)}</td>
+                      </tr>
+                    </>
+                  )}
+                  {gstEnabled && !intraState && (
+                    <tr>
+                      <td className="pr-8 text-(--color-muted)">IGST</td>
+                      <td className="text-right tabular-nums">{fmtMoney(invoice.igst, cur)}</td>
+                    </tr>
+                  )}
+                  {Number(invoice.roundOff) !== 0 && (
+                    <tr>
+                      <td className="pr-8 text-(--color-muted)">Round off</td>
+                      <td className="text-right tabular-nums">{fmtMoney(invoice.roundOff, cur)}</td>
+                    </tr>
+                  )}
+                  <tr className="border-t border-(--color-border)">
+                    <td className="pr-8 pt-1 font-semibold">Total</td>
+                    <td className="pt-1 text-right text-base font-semibold tabular-nums">
+                      {fmtMoney(invoice.total, cur)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <p className="text-sm text-(--color-muted)">
+            <span className="font-medium text-(--color-fg)">In words:</span>{" "}
+            {amountInWords(total)}
+          </p>
+        </div>
+
+        {/* Payments */}
+        <div className="space-y-6">
+          <div className="card p-4">
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div>
+                <div className="text-xs text-(--color-muted)">Total</div>
+                <div className="font-semibold tabular-nums">{fmtMoney(total, cur)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-(--color-muted)">Paid</div>
+                <div className="font-semibold tabular-nums text-(--color-ok)">
+                  {fmtMoney(paid, cur)}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-(--color-muted)">Due</div>
+                <div className="font-semibold tabular-nums text-(--color-danger)">
+                  {fmtMoney(due, cur)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {due > 0 && invoice.status !== "cancelled" && (
+            <div className="card p-4">
+              <div className="mb-3 text-sm font-semibold">Record a payment</div>
+              <PaymentForm invoiceId={id} due={due} />
+            </div>
+          )}
+
+          <div className="card">
+            <div className="border-b border-(--color-border) px-4 py-3 text-sm font-semibold">
+              Payment history
+            </div>
+            {payments.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-(--color-muted)">
+                No payments recorded.
+              </div>
+            ) : (
+              <div className="divide-y divide-(--color-border)">
+                {payments.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                    <div>
+                      <div className="font-medium tabular-nums">{fmtMoney(p.amount, cur)}</div>
+                      <div className="text-xs capitalize text-(--color-muted)">
+                        {p.method.replace("_", " ")} · {fmtDate(p.paidAt)}
+                        {p.reference ? ` · ${p.reference}` : ""}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

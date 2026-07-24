@@ -1,26 +1,203 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --color-bg: #f6f7f5;
+  --color-surface: #ffffff;
+  --color-border: #e5e7eb;
+  --color-muted: #6b7280;
+  --color-fg: #111827;
+  --color-primary: #16794c;
+  --color-primary-fg: #ffffff;
+  --color-primary-soft: #e6f4ec;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fdecec;
+  --color-warn: #b45309;
+  --color-warn-soft: #fdf2e2;
+  --color-ok: #15803d;
+  --color-ok-soft: #e7f6ec;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+}
+
+/* ---- Reusable component classes ---- */
+@layer components {
+  .btn,
+  .btn-primary,
+  .btn-outline,
+  .btn-danger,
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors cursor-pointer;
+  }
+  .btn:disabled,
+  .btn-primary:disabled,
+  .btn-outline:disabled,
+  .btn-danger:disabled,
+  .btn-ghost:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .btn-primary {
+    background: var(--color-primary);
+    color: #fff;
+  }
+  .btn-primary:hover {
+    opacity: 0.9;
+  }
+  .btn-outline {
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-fg);
+  }
+  .btn-outline:hover {
+    background: var(--color-bg);
+  }
+  .btn-danger {
+    background: var(--color-danger);
+    color: #fff;
+  }
+  .btn-danger:hover {
+    opacity: 0.9;
+  }
+  .btn-ghost {
+    color: var(--color-muted);
+  }
+  .btn-ghost:hover {
+    background: var(--color-bg);
+    color: var(--color-fg);
+  }
+  .input {
+    @apply w-full rounded-lg border px-3 py-2 text-sm outline-none;
+    border-color: var(--color-border);
+    background: var(--color-surface);
+  }
+  .input:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-soft);
+  }
+  .label {
+    @apply block text-sm font-medium mb-1.5;
+  }
+  .card {
+    @apply rounded-xl border shadow-sm;
+    border-color: var(--color-border);
+    background: var(--color-surface);
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+}
+
+/* ---- Onboarding tour (driver.js) theming ---- */
+.driver-popover.sk-tour {
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+}
+.driver-popover.sk-tour .driver-popover-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+.driver-popover.sk-tour .driver-popover-description {
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+.driver-popover.sk-tour .driver-popover-progress-text {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+.driver-popover.sk-tour button.driver-popover-next-btn,
+.driver-popover.sk-tour button.driver-popover-done-btn {
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  text-shadow: none;
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.8rem;
+  font-weight: 500;
+}
+.driver-popover.sk-tour button.driver-popover-prev-btn {
+  background: var(--color-surface);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
+  text-shadow: none;
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.8rem;
+}
+.driver-popover.sk-tour .driver-popover-close-btn {
+  color: var(--color-muted);
+}
+
+/* ---- A4 print document (quotations / invoices) ---- */
+.a4-page {
+  position: relative;
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 16mm 14mm;
+  background-color: #ffffff;
+  color: #111827;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12);
+  box-sizing: border-box;
+}
+
+/* Letterhead as a real <img> (prints without "Background graphics"), filling
+   the first A4 page. Content sits above it. */
+.lh-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 297mm;
+  object-fit: fill;
+  z-index: 0;
+}
+.a4-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* Screen wrapper around the page (gray backdrop). Collapses in print. */
+.print-wrap {
+  min-height: 100vh;
+  background: var(--color-bg);
+  padding: 24px 0;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-wrap {
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    background: #ffffff !important;
+  }
+  .a4-page {
+    box-shadow: none !important;
+    margin: 0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }

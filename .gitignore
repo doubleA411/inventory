@@ -1,5 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# locally-uploaded org assets (dev only; prod uses Supabase Storage)
+/public/uploads
+
 # dependencies
 /node_modules
 /.pnp
