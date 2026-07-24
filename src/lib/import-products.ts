@@ -27,6 +27,30 @@ const num = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+// How many rows to insert concurrently. Each row does several DB round trips
+// (product insert + the stock-movement transaction), which are latency-bound
+// rather than CPU-bound — running them one-at-a-time means every row pays a
+// full network round trip in sequence. A modest concurrency limit lets rows
+// overlap in flight without overwhelming the connection pool.
+const IMPORT_CONCURRENCY = 8;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 export async function importProducts(
   orgId: string,
   userId: string,
@@ -46,16 +70,36 @@ export async function importProducts(
     .where(eq(categories.organizationId, orgId));
   const catByName = new Map(catList.map((c) => [c.name.toLowerCase(), c]));
 
+  // Pre-create any brand-new categories referenced in the file *before*
+  // processing rows concurrently below — otherwise two rows in the same
+  // concurrent batch that both reference the same new category would race
+  // to insert it.
+  const newCatNames = new Set<string>();
+  for (const r of rows) {
+    const catName = (r.category ?? "").toString().trim();
+    if (catName && !catByName.has(catName.toLowerCase())) {
+      newCatNames.add(catName);
+    }
+  }
+  for (const catName of newCatNames) {
+    // Re-check in case an identically-cased duplicate already resolved it.
+    if (catByName.has(catName.toLowerCase())) continue;
+    const [c] = await db
+      .insert(categories)
+      .values({ organizationId: orgId, name: catName })
+      .returning();
+    catByName.set(catName.toLowerCase(), c);
+  }
+
   const errors: ImportResult["errors"] = [];
   let inserted = 0;
 
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
+  await mapWithConcurrency(rows, IMPORT_CONCURRENCY, async (r, i) => {
     const rowNum = i + 1;
     const name = (r.name ?? "").toString().trim();
     if (!name) {
       errors.push({ row: rowNum, message: "Missing product name" });
-      continue;
+      return;
     }
     const unitKey = (r.unit ?? "").toString().trim().toLowerCase();
     const unit = unitBySymbol.get(unitKey) ?? unitByName.get(unitKey);
@@ -64,25 +108,11 @@ export async function importProducts(
         row: rowNum,
         message: `Unknown unit "${r.unit ?? ""}". Add it under Units first.`,
       });
-      continue;
+      return;
     }
 
-    // Resolve or create category.
-    let categoryId: string | null = null;
     const catName = (r.category ?? "").toString().trim();
-    if (catName) {
-      const existing = catByName.get(catName.toLowerCase());
-      if (existing) {
-        categoryId = existing.id;
-      } else {
-        const [c] = await db
-          .insert(categories)
-          .values({ organizationId: orgId, name: catName })
-          .returning();
-        catByName.set(catName.toLowerCase(), c);
-        categoryId = c.id;
-      }
-    }
+    const categoryId = catName ? catByName.get(catName.toLowerCase())?.id ?? null : null;
 
     const reorder = num(r.reorderLevel) ?? 0;
     const cost = num(r.costPrice);
@@ -126,7 +156,7 @@ export async function importProducts(
         errors.push({ row: rowNum, message: "Could not insert row" });
       }
     }
-  }
+  });
 
   return { inserted, errors };
 }

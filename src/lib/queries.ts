@@ -23,6 +23,7 @@ export type ProductRow = {
   unitSymbol: string;
   currentStock: number;
   reorderLevel: number;
+  costPrice: number;
   isActive: boolean;
 };
 
@@ -39,6 +40,7 @@ export async function listProducts(
       unitSymbol: units.symbol,
       currentStock: products.currentStock,
       reorderLevel: products.reorderLevel,
+      costPrice: products.costPrice,
       isActive: products.isActive,
     })
     .from(products)
@@ -51,6 +53,7 @@ export async function listProducts(
     ...r,
     currentStock: Number(r.currentStock),
     reorderLevel: Number(r.reorderLevel),
+    costPrice: Number(r.costPrice ?? 0),
   }));
 
   if (opts?.search) {
@@ -76,52 +79,49 @@ export async function getProductDetail(orgId: string, id: string) {
     .limit(1);
   if (!product) return null;
 
-  const [unit] = await db
-    .select()
-    .from(units)
-    .where(eq(units.id, product.stockUnitId))
-    .limit(1);
+  // These four all depend only on `product`/`id`, not on each other — run
+  // them concurrently instead of paying 4 sequential network round trips.
+  const [unitRows, categoryRows, batches, movements] = await Promise.all([
+    db.select().from(units).where(eq(units.id, product.stockUnitId)).limit(1),
+    product.categoryId
+      ? db.select().from(categories).where(eq(categories.id, product.categoryId)).limit(1)
+      : Promise.resolve([]),
+    db
+      .select()
+      .from(stockBatches)
+      .where(and(eq(stockBatches.productId, id), gt(stockBatches.quantityRemaining, "0")))
+      .orderBy(sql`${stockBatches.expiryDate} ASC NULLS LAST`, asc(stockBatches.receivedDate)),
+    db
+      .select({
+        id: stockMovements.id,
+        type: stockMovements.type,
+        quantity: stockMovements.quantity,
+        unitSymbol: units.symbol,
+        deltaInStockUnit: stockMovements.deltaInStockUnit,
+        balanceAfter: stockMovements.balanceAfter,
+        note: stockMovements.note,
+        costAmount: stockMovements.costAmount,
+        invoiceId: stockMovements.invoiceId,
+        invoiceNumber: invoices.number,
+        createdAt: stockMovements.createdAt,
+        userName: users.name,
+      })
+      .from(stockMovements)
+      .innerJoin(units, eq(stockMovements.unitId, units.id))
+      .leftJoin(users, eq(stockMovements.userId, users.id))
+      .leftJoin(invoices, eq(stockMovements.invoiceId, invoices.id))
+      .where(eq(stockMovements.productId, id))
+      .orderBy(desc(stockMovements.createdAt))
+      .limit(50),
+  ]);
 
-  const category = product.categoryId
-    ? (
-        await db
-          .select()
-          .from(categories)
-          .where(eq(categories.id, product.categoryId))
-          .limit(1)
-      )[0] ?? null
-    : null;
-
-  const batches = await db
-    .select()
-    .from(stockBatches)
-    .where(and(eq(stockBatches.productId, id), gt(stockBatches.quantityRemaining, "0")))
-    .orderBy(sql`${stockBatches.expiryDate} ASC NULLS LAST`, asc(stockBatches.receivedDate));
-
-  const movements = await db
-    .select({
-      id: stockMovements.id,
-      type: stockMovements.type,
-      quantity: stockMovements.quantity,
-      unitSymbol: units.symbol,
-      deltaInStockUnit: stockMovements.deltaInStockUnit,
-      balanceAfter: stockMovements.balanceAfter,
-      note: stockMovements.note,
-      costAmount: stockMovements.costAmount,
-      invoiceId: stockMovements.invoiceId,
-      invoiceNumber: invoices.number,
-      createdAt: stockMovements.createdAt,
-      userName: users.name,
-    })
-    .from(stockMovements)
-    .innerJoin(units, eq(stockMovements.unitId, units.id))
-    .leftJoin(users, eq(stockMovements.userId, users.id))
-    .leftJoin(invoices, eq(stockMovements.invoiceId, invoices.id))
-    .where(eq(stockMovements.productId, id))
-    .orderBy(desc(stockMovements.createdAt))
-    .limit(50);
-
-  return { product, unit, category, batches, movements };
+  return {
+    product,
+    unit: unitRows[0],
+    category: categoryRows[0] ?? null,
+    batches,
+    movements,
+  };
 }
 
 export async function listUnits(orgId: string) {
@@ -315,27 +315,6 @@ export type DashboardStats = {
 };
 
 export async function dashboardStats(orgId: string): Promise<DashboardStats> {
-  const allProducts = await listProducts(orgId);
-  const lowStock = allProducts.filter(
-    (p) => p.isActive && p.currentStock <= p.reorderLevel,
-  );
-  const outOfStock = allProducts.filter(
-    (p) => p.isActive && p.currentStock <= 0,
-  ).length;
-
-  // Stock value = sum(currentStock * costPrice) — needs costPrice, join products.
-  const valueRows = await db
-    .select({
-      currentStock: products.currentStock,
-      costPrice: products.costPrice,
-    })
-    .from(products)
-    .where(eq(products.organizationId, orgId));
-  const stockValue = valueRows.reduce(
-    (s, r) => s + Number(r.currentStock) * Number(r.costPrice ?? 0),
-    0,
-  );
-
   const todayStr = new Date().toISOString().slice(0, 10);
   const soonStr = new Date(Date.now() + EXPIRY_SOON_DAYS * 86400000)
     .toISOString()
@@ -353,8 +332,13 @@ export async function dashboardStats(orgId: string): Promise<DashboardStats> {
     .innerJoin(products, eq(stockBatches.productId, products.id))
     .innerJoin(units, eq(products.stockUnitId, units.id));
 
-  const expiringSoon = (
-    await expBase.where(
+  // These three queries are independent of each other — run concurrently
+  // instead of paying 3 sequential network round trips (stock value is now
+  // derived from listProducts' own costPrice column, so that separate query
+  // is gone entirely).
+  const [allProducts, expiringSoonRaw, expiredRaw] = await Promise.all([
+    listProducts(orgId),
+    expBase.where(
       and(
         eq(stockBatches.organizationId, orgId),
         gt(stockBatches.quantityRemaining, "0"),
@@ -362,11 +346,8 @@ export async function dashboardStats(orgId: string): Promise<DashboardStats> {
         gte(stockBatches.expiryDate, todayStr),
         lte(stockBatches.expiryDate, soonStr),
       ),
-    )
-  ).map((r) => ({ ...r, expiryDate: r.expiryDate!, qty: Number(r.qty) }));
-
-  const expired = (
-    await db
+    ),
+    db
       .select({
         productId: products.id,
         productName: products.name,
@@ -384,8 +365,29 @@ export async function dashboardStats(orgId: string): Promise<DashboardStats> {
           isNotNull(stockBatches.expiryDate),
           lt(stockBatches.expiryDate, todayStr),
         ),
-      )
-  ).map((r) => ({ ...r, expiryDate: r.expiryDate!, qty: Number(r.qty) }));
+      ),
+  ]);
+
+  const lowStock = allProducts.filter(
+    (p) => p.isActive && p.currentStock <= p.reorderLevel,
+  );
+  const outOfStock = allProducts.filter(
+    (p) => p.isActive && p.currentStock <= 0,
+  ).length;
+  const stockValue = allProducts.reduce(
+    (s, p) => s + p.currentStock * p.costPrice,
+    0,
+  );
+  const expiringSoon = expiringSoonRaw.map((r) => ({
+    ...r,
+    expiryDate: r.expiryDate!,
+    qty: Number(r.qty),
+  }));
+  const expired = expiredRaw.map((r) => ({
+    ...r,
+    expiryDate: r.expiryDate!,
+    qty: Number(r.qty),
+  }));
 
   return {
     totalProducts: allProducts.length,

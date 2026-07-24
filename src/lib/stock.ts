@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   products,
@@ -77,21 +77,19 @@ export async function applyMovement(
         .limit(1);
       if (!product) return { ok: false as const, error: "Product not found." };
 
-      const [stockUnit] = await tx
-        .select()
-        .from(units)
-        .where(eq(units.id, product.stockUnitId))
-        .limit(1);
-      const [moveUnit] = await tx
+      // Fetch the stock unit and the movement's unit in one round trip
+      // instead of two (they may be the same row when units match).
+      const bothUnits = await tx
         .select()
         .from(units)
         .where(
           and(
-            eq(units.id, input.unitId),
+            inArray(units.id, [product.stockUnitId, input.unitId]),
             eq(units.organizationId, input.organizationId),
           ),
-        )
-        .limit(1);
+        );
+      const stockUnit = bothUnits.find((u) => u.id === product.stockUnitId);
+      const moveUnit = bothUnits.find((u) => u.id === input.unitId);
       if (!stockUnit || !moveUnit) {
         return { ok: false as const, error: "Unit not found." };
       }
