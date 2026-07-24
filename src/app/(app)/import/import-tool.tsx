@@ -5,11 +5,8 @@ import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { UploadCloud, FileDown, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui";
-import {
-  importProductsAction,
-  type ImportRow,
-  type ImportResult,
-} from "./actions";
+import { importProductsAction } from "./actions";
+import type { ImportRow, ImportResult } from "@/lib/import-products";
 
 const TARGET_FIELDS: {
   key: keyof ImportRow;
@@ -133,7 +130,7 @@ export function ImportTool({ units }: { units: { symbol: string; name: string }[
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "stockkitchen-template.csv";
+    a.download = "stackwise-template.csv";
     a.click();
     URL.revokeObjectURL(url);
   }

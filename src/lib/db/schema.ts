@@ -85,6 +85,23 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const passwordResetTokens = pgTable(
+  "password_reset_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // SHA-256 hex digest of the raw token — the raw token is only ever sent
+    // by email and never stored, so a DB read can't be used to reset a password.
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("password_reset_tokens_user_idx").on(t.userId)],
+);
+
 export const memberships = pgTable(
   "memberships",
   {
@@ -299,6 +316,7 @@ export const stockMovementsRelations = relations(stockMovements, ({ one }) => ({
 // Convenience type exports
 export type Organization = typeof organizations.$inferSelect;
 export type User = typeof users.$inferSelect;
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
 export type Unit = typeof units.$inferSelect;
 export type UnitGroup = typeof unitGroups.$inferSelect;

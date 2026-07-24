@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { units, unitGroups, products, stockMovements } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
+import { isUniqueViolation } from "@/lib/db-errors";
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -51,7 +52,7 @@ export async function createUnitAction(
       isBase: false,
     });
   } catch (e) {
-    if (e instanceof Error && e.message.includes("units_org_symbol_uq")) {
+    if (isUniqueViolation(e, "units_org_symbol_uq")) {
       return { error: `A unit with symbol "${d.symbol}" already exists.` };
     }
     return { error: "Could not create unit." };

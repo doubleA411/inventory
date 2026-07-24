@@ -6,10 +6,10 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "StockKitchen — Inventory",
-  description: "Simple stock & inventory management for catering.",
+  title: "Stackwise — Inventory & Billing",
+  description: "Inventory management, quotations and billing for any business.",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, title: "StockKitchen", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Stackwise", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

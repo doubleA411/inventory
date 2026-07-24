@@ -7,7 +7,7 @@ import "driver.js/dist/driver.css";
 import { Sparkles } from "lucide-react";
 import { TOUR_STEPS } from "@/lib/help-content";
 
-const STORAGE_KEY = "sk_onboarded_v1";
+const STORAGE_KEY = "sw_onboarded_v1";
 
 function buildSteps(): DriveStep[] {
   return TOUR_STEPS.filter((s) => {
@@ -57,7 +57,7 @@ export function OnboardingTour({ collapsed = false }: { collapsed?: boolean }) {
         nextBtnText: "Next",
         prevBtnText: "Back",
         doneBtnText: "Done",
-        popoverClass: "sk-tour",
+        popoverClass: "sw-tour",
         steps,
         onDestroyed: () => {
           try {
@@ -84,8 +84,8 @@ export function OnboardingTour({ collapsed = false }: { collapsed?: boolean }) {
   // Allow other components (e.g. Help page) to trigger the tour.
   useEffect(() => {
     const handler = () => startTour();
-    window.addEventListener("sk:start-tour", handler);
-    return () => window.removeEventListener("sk:start-tour", handler);
+    window.addEventListener("sw:start-tour", handler);
+    return () => window.removeEventListener("sw:start-tour", handler);
   }, [startTour]);
 
   return (

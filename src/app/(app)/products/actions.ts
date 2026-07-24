@@ -8,16 +8,7 @@ import { db } from "@/lib/db";
 import { products, categories } from "@/lib/db/schema";
 import { requireAuth, requireRole } from "@/lib/auth";
 import { applyMovement } from "@/lib/stock";
-
-const productSchema = z.object({
-  name: z.string().trim().min(1, "Name is required"),
-  code: z.string().trim().optional().nullable(),
-  categoryId: z.string().uuid().optional().nullable(),
-  stockUnitId: z.string().uuid("Choose a unit"),
-  reorderLevel: z.coerce.number().min(0).default(0),
-  costPrice: z.coerce.number().min(0).optional().nullable(),
-  notes: z.string().trim().optional().nullable(),
-});
+import { productSchema, createProduct, updateProduct } from "@/lib/products";
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -43,24 +34,8 @@ export async function createProductAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
-  const d = parsed.data;
-  try {
-    await db.insert(products).values({
-      organizationId: organization.id,
-      name: d.name,
-      code: d.code ?? null,
-      categoryId: d.categoryId ?? null,
-      stockUnitId: d.stockUnitId,
-      reorderLevel: String(d.reorderLevel),
-      costPrice: d.costPrice != null ? String(d.costPrice) : null,
-      notes: d.notes ?? null,
-    });
-  } catch (e) {
-    if (e instanceof Error && e.message.includes("products_org_code_uq")) {
-      return { error: "A product with that code already exists." };
-    }
-    return { error: "Could not create product." };
-  }
+  const result = await createProduct(organization.id, parsed.data);
+  if (!result.ok) return { error: result.error };
   revalidatePath("/products");
   redirect("/products");
 }
@@ -83,21 +58,8 @@ export async function updateProductAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
-  const d = parsed.data;
-  await db
-    .update(products)
-    .set({
-      name: d.name,
-      code: d.code ?? null,
-      categoryId: d.categoryId ?? null,
-      stockUnitId: d.stockUnitId,
-      reorderLevel: String(d.reorderLevel),
-      costPrice: d.costPrice != null ? String(d.costPrice) : null,
-      notes: d.notes ?? null,
-    })
-    .where(
-      and(eq(products.id, productId), eq(products.organizationId, organization.id)),
-    );
+  const result = await updateProduct(organization.id, productId, parsed.data);
+  if (!result.ok) return { error: result.error };
   revalidatePath("/products");
   revalidatePath(`/products/${productId}`);
   redirect(`/products/${productId}`);

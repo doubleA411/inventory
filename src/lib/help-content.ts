@@ -10,7 +10,7 @@ export type TourStep = {
 
 export const TOUR_STEPS: TourStep[] = [
   {
-    title: "Welcome to StockKitchen 👋",
+    title: "Welcome to Stackwise 👋",
     description:
       "A quick 60-second tour of how to manage your inventory. You can replay this anytime from the “Take a tour” button.",
   },

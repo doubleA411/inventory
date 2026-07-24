@@ -42,7 +42,7 @@ export function HelpCenter() {
         </div>
         <button
           className="btn-primary"
-          onClick={() => window.dispatchEvent(new Event("sk:start-tour"))}
+          onClick={() => window.dispatchEvent(new Event("sw:start-tour"))}
         >
           <Sparkles className="h-4 w-4" /> Take a tour
         </button>

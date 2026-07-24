@@ -1,9 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthContext } from "@/lib/auth";
-import { LoginForm } from "./login-form";
+import { ForgotPasswordForm } from "./forgot-password-form";
 
-export default async function LoginPage() {
+export default async function ForgotPasswordPage() {
   const ctx = await getAuthContext();
   if (ctx) redirect("/dashboard");
 
@@ -15,26 +14,15 @@ export default async function LoginPage() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/icon.svg" alt="" className="h-9 w-9" />
           </div>
-          <h1 className="text-xl font-semibold">Stackwise</h1>
+          <h1 className="text-xl font-semibold">Reset your password</h1>
           <p className="mt-1 text-sm text-(--color-muted)">
-            Sign in to manage your inventory
+            Enter your email and we&apos;ll send you a reset link
           </p>
         </div>
 
         <div className="card p-6">
-          <LoginForm />
+          <ForgotPasswordForm />
         </div>
-
-        <p className="mt-6 text-center text-sm text-(--color-muted)">
-          New here?{" "}
-          <Link href="/signup" className="font-medium text-(--color-primary) hover:underline">
-            Create a workspace
-          </Link>
-        </p>
-        <p className="mt-3 text-center text-xs text-(--color-muted)">
-          Demo login: <span className="font-mono">owner@catering.local</span> /{" "}
-          <span className="font-mono">password123</span>
-        </p>
       </div>
     </div>
   );

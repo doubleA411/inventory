@@ -131,7 +131,7 @@ export function AppShell({
 function TourLauncher() {
   return (
     <button
-      onClick={() => window.dispatchEvent(new Event("sk:start-tour"))}
+      onClick={() => window.dispatchEvent(new Event("sw:start-tour"))}
       className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-(--color-muted) transition-colors hover:bg-(--color-bg) hover:text-(--color-fg)"
     >
       Take a tour
@@ -151,7 +151,7 @@ function Brand({ orgName, border = true }: { orgName: string; border?: boolean }
       <img src="/icon.svg" alt="" className="h-8 w-8 rounded-lg" />
       <div className="min-w-0">
         <div className="truncate text-sm font-semibold">{orgName}</div>
-        <div className="text-xs text-(--color-muted)">StockKitchen</div>
+        <div className="text-xs text-(--color-muted)">Stackwise</div>
       </div>
     </div>
   );
