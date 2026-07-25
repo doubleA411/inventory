@@ -78,6 +78,96 @@ describe("importProducts (CSV/XLSX import)", () => {
     expect(batches[0].unitCost).toBeNull();
   });
 
+  // The onboarding path: a caterer bulk-imports opening stock with costs, then
+  // restocks the next day at a different price.
+  it("drains the imported batch first, then spills into the newer restock, blending both costs", async () => {
+    const name = `Import Onboard ${run}`;
+    await importProducts(orgId, userId, [
+      { name, unit: "kg", openingStock: 20, costPrice: 50 },
+    ]);
+    const row = await trackAndFind(name);
+
+    const { applyMovement } = await import("@/lib/stock");
+    // Next day, price has gone up.
+    await applyMovement({
+      organizationId: orgId,
+      productId: row.id,
+      type: "restock",
+      quantity: 10,
+      unitId: row.stockUnitId,
+      unitCost: 80,
+      receivedDate: "2026-07-26",
+    });
+
+    // Use 25kg: 20 from the imported batch @50, then 5 from the restock @80.
+    const use = await applyMovement({
+      organizationId: orgId,
+      productId: row.id,
+      type: "usage",
+      quantity: 25,
+      unitId: row.stockUnitId,
+    });
+    expect(use.ok).toBe(true);
+
+    const { stockMovements } = await import("@/lib/db/schema");
+    const [movement] = await db
+      .select()
+      .from(stockMovements)
+      .where(eq(stockMovements.id, use.ok ? use.movementId : ""));
+    // 20*50 + 5*80 = 1400, i.e. a blended 56/kg — not 25*80 nor 25*50.
+    expect(Number(movement.costAmount)).toBe(1400);
+    expect(Number(movement.unitCost)).toBe(56);
+
+    // Only the newer, pricier batch has stock left.
+    const left = await db
+      .select()
+      .from(stockBatches)
+      .where(eq(stockBatches.productId, row.id));
+    const remaining = left.filter((b) => Number(b.quantityRemaining) > 0);
+    expect(remaining).toHaveLength(1);
+    expect(Number(remaining[0].unitCost)).toBe(80);
+    expect(Number(remaining[0].quantityRemaining)).toBe(5);
+  });
+
+  // FEFO is expiry-first by design, so a newer batch that expires sooner is
+  // consumed before older no-expiry stock. Costing still follows whichever
+  // batch was actually drawn.
+  it("draws a newer expiring batch before older no-expiry imported stock", async () => {
+    const name = `Import Expiry ${run}`;
+    await importProducts(orgId, userId, [
+      { name, unit: "kg", openingStock: 20, costPrice: 50 },
+    ]);
+    const row = await trackAndFind(name);
+
+    const { applyMovement } = await import("@/lib/stock");
+    await applyMovement({
+      organizationId: orgId,
+      productId: row.id,
+      type: "restock",
+      quantity: 10,
+      unitId: row.stockUnitId,
+      unitCost: 80,
+      expiryDate: "2026-08-01",
+    });
+
+    const use = await applyMovement({
+      organizationId: orgId,
+      productId: row.id,
+      type: "usage",
+      quantity: 10,
+      unitId: row.stockUnitId,
+    });
+    expect(use.ok).toBe(true);
+
+    const { stockMovements } = await import("@/lib/db/schema");
+    const [movement] = await db
+      .select()
+      .from(stockMovements)
+      .where(eq(stockMovements.id, use.ok ? use.movementId : ""));
+    // Entirely from the expiring 80/kg batch, not the imported 50/kg stock.
+    expect(Number(movement.costAmount)).toBe(800);
+  });
+
   it("does not reprice imported opening stock when a later restock costs more", async () => {
     const name = `Import Reprice ${run}`;
     await importProducts(orgId, userId, [
