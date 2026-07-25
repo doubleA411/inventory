@@ -56,6 +56,143 @@ describe("importProducts (CSV/XLSX import)", () => {
       .where(eq(stockBatches.productId, row.id));
     expect(batches).toHaveLength(1);
     expect(Number(batches[0].quantityRemaining)).toBe(25);
+    // The opening-stock batch must carry the CSV's cost price, so imported
+    // stock is valued at what it actually cost rather than being repriced by
+    // a later restock.
+    expect(Number(batches[0].unitCost)).toBe(30);
+  });
+
+  it("leaves the opening batch's cost unset when the CSV has no cost price", async () => {
+    const name = `Import NoCost ${run}`;
+    const result = await importProducts(orgId, userId, [
+      { name, unit: "kg", openingStock: 10 },
+    ]);
+    expect(result.inserted).toBe(1);
+
+    const row = await trackAndFind(name);
+    const batches = await db
+      .select()
+      .from(stockBatches)
+      .where(eq(stockBatches.productId, row.id));
+    expect(batches).toHaveLength(1);
+    expect(batches[0].unitCost).toBeNull();
+  });
+
+  // The onboarding path: a caterer bulk-imports opening stock with costs, then
+  // restocks the next day at a different price.
+  it("drains the imported batch first, then spills into the newer restock, blending both costs", async () => {
+    const name = `Import Onboard ${run}`;
+    await importProducts(orgId, userId, [
+      { name, unit: "kg", openingStock: 20, costPrice: 50 },
+    ]);
+    const row = await trackAndFind(name);
+
+    const { applyMovement } = await import("@/lib/stock");
+    // Next day, price has gone up.
+    await applyMovement({
+      organizationId: orgId,
+      productId: row.id,
+      type: "restock",
+      quantity: 10,
+      unitId: row.stockUnitId,
+      unitCost: 80,
+      receivedDate: "2026-07-26",
+    });
+
+    // Use 25kg: 20 from the imported batch @50, then 5 from the restock @80.
+    const use = await applyMovement({
+      organizationId: orgId,
+      productId: row.id,
+      type: "usage",
+      quantity: 25,
+      unitId: row.stockUnitId,
+    });
+    expect(use.ok).toBe(true);
+
+    const { stockMovements } = await import("@/lib/db/schema");
+    const [movement] = await db
+      .select()
+      .from(stockMovements)
+      .where(eq(stockMovements.id, use.ok ? use.movementId : ""));
+    // 20*50 + 5*80 = 1400, i.e. a blended 56/kg — not 25*80 nor 25*50.
+    expect(Number(movement.costAmount)).toBe(1400);
+    expect(Number(movement.unitCost)).toBe(56);
+
+    // Only the newer, pricier batch has stock left.
+    const left = await db
+      .select()
+      .from(stockBatches)
+      .where(eq(stockBatches.productId, row.id));
+    const remaining = left.filter((b) => Number(b.quantityRemaining) > 0);
+    expect(remaining).toHaveLength(1);
+    expect(Number(remaining[0].unitCost)).toBe(80);
+    expect(Number(remaining[0].quantityRemaining)).toBe(5);
+  });
+
+  // FEFO is expiry-first by design, so a newer batch that expires sooner is
+  // consumed before older no-expiry stock. Costing still follows whichever
+  // batch was actually drawn.
+  it("draws a newer expiring batch before older no-expiry imported stock", async () => {
+    const name = `Import Expiry ${run}`;
+    await importProducts(orgId, userId, [
+      { name, unit: "kg", openingStock: 20, costPrice: 50 },
+    ]);
+    const row = await trackAndFind(name);
+
+    const { applyMovement } = await import("@/lib/stock");
+    await applyMovement({
+      organizationId: orgId,
+      productId: row.id,
+      type: "restock",
+      quantity: 10,
+      unitId: row.stockUnitId,
+      unitCost: 80,
+      expiryDate: "2026-08-01",
+    });
+
+    const use = await applyMovement({
+      organizationId: orgId,
+      productId: row.id,
+      type: "usage",
+      quantity: 10,
+      unitId: row.stockUnitId,
+    });
+    expect(use.ok).toBe(true);
+
+    const { stockMovements } = await import("@/lib/db/schema");
+    const [movement] = await db
+      .select()
+      .from(stockMovements)
+      .where(eq(stockMovements.id, use.ok ? use.movementId : ""));
+    // Entirely from the expiring 80/kg batch, not the imported 50/kg stock.
+    expect(Number(movement.costAmount)).toBe(800);
+  });
+
+  it("does not reprice imported opening stock when a later restock costs more", async () => {
+    const name = `Import Reprice ${run}`;
+    await importProducts(orgId, userId, [
+      { name, unit: "kg", openingStock: 10, costPrice: 40 },
+    ]);
+    const row = await trackAndFind(name);
+
+    const { applyMovement } = await import("@/lib/stock");
+    await applyMovement({
+      organizationId: orgId,
+      productId: row.id,
+      type: "restock",
+      quantity: 10,
+      unitId: row.stockUnitId,
+      unitCost: 90,
+    });
+
+    const batches = await db
+      .select()
+      .from(stockBatches)
+      .where(eq(stockBatches.productId, row.id));
+    const costs = batches.map((b) => Number(b.unitCost)).sort((a, b) => a - b);
+    // The imported batch stays at 40 even though the product's cost price is
+    // now 90 — the whole point of per-batch costing.
+    expect(costs).toEqual([40, 90]);
   });
 
   it("matches units by symbol or full name, case-insensitively", async () => {
