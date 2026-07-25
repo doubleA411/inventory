@@ -42,11 +42,13 @@ type Role = "owner" | "admin" | "staff";
 export function AppShell({
   role,
   orgName,
+  orgLogoUrl,
   userName,
   children,
 }: {
   role: Role;
   orgName: string;
+  orgLogoUrl?: string | null;
   userName: string;
   children: React.ReactNode;
 }) {
@@ -81,7 +83,7 @@ export function AppShell({
     <div className="flex min-h-full">
       {/* Desktop rail */}
       <aside className="hidden w-64 shrink-0 flex-col border-r border-(--color-border) bg-(--color-surface) md:flex">
-        <Brand orgName={orgName} />
+        <Brand orgName={orgName} orgLogoUrl={orgLogoUrl} />
         <nav className="flex-1 space-y-1 px-3 py-4">{links}</nav>
         <div className="px-3 pb-1">
           <OnboardingTour />
@@ -95,7 +97,7 @@ export function AppShell({
           <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
           <aside className="absolute left-0 top-0 flex h-full w-64 flex-col bg-(--color-surface) shadow-xl">
             <div className="flex items-center justify-between border-b border-(--color-border)">
-              <Brand orgName={orgName} border={false} />
+              <Brand orgName={orgName} orgLogoUrl={orgLogoUrl} border={false} />
               <button className="btn-ghost mr-2" onClick={() => setOpen(false)} aria-label="Close menu">
                 <X className="h-5 w-5" />
               </button>
@@ -139,7 +141,15 @@ function TourLauncher() {
   );
 }
 
-function Brand({ orgName, border = true }: { orgName: string; border?: boolean }) {
+function Brand({
+  orgName,
+  orgLogoUrl,
+  border = true,
+}: {
+  orgName: string;
+  orgLogoUrl?: string | null;
+  border?: boolean;
+}) {
   return (
     <div
       className={cn(
@@ -147,8 +157,14 @@ function Brand({ orgName, border = true }: { orgName: string; border?: boolean }
         border && "border-b border-(--color-border)",
       )}
     >
+      {/* The org's own logo when they've uploaded one, else the app icon.
+          object-contain so non-square logos aren't stretched. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/icon.svg" alt="" className="h-8 w-8 rounded-lg" />
+      <img
+        src={orgLogoUrl || "/icon.svg"}
+        alt=""
+        className="h-8 w-8 rounded-lg object-contain"
+      />
       <div className="min-w-0">
         <div className="truncate text-sm font-semibold">{orgName}</div>
         <div className="text-xs text-(--color-muted)">Stackwise</div>

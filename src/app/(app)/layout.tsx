@@ -8,7 +8,12 @@ export default async function AppLayout({
 }) {
   const { user, organization, role } = await requireAuth();
   return (
-    <AppShell role={role} orgName={organization.name} userName={user.name}>
+    <AppShell
+      role={role}
+      orgName={organization.name}
+      orgLogoUrl={organization.logoUrl}
+      userName={user.name}
+    >
       {children}
     </AppShell>
   );
