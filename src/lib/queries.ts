@@ -332,11 +332,25 @@ export async function dashboardStats(orgId: string): Promise<DashboardStats> {
     .innerJoin(products, eq(stockBatches.productId, products.id))
     .innerJoin(units, eq(products.stockUnitId, units.id));
 
-  // These three queries are independent of each other — run concurrently
-  // instead of paying 3 sequential network round trips (stock value is now
-  // derived from listProducts' own costPrice column, so that separate query
-  // is gone entirely).
-  const [allProducts, expiringSoonRaw, expiredRaw] = await Promise.all([
+  // Stock value: each batch valued at its own purchase cost (falling back to
+  // the product's current cost price for batches with no recorded cost),
+  // rather than one blended price across all stock of a product.
+  const stockValueQuery = db
+    .select({
+      value: sql<string>`coalesce(sum(${stockBatches.quantityRemaining} * coalesce(${stockBatches.unitCost}, ${products.costPrice}, 0)), 0)`,
+    })
+    .from(stockBatches)
+    .innerJoin(products, eq(stockBatches.productId, products.id))
+    .where(
+      and(
+        eq(stockBatches.organizationId, orgId),
+        gt(stockBatches.quantityRemaining, "0"),
+      ),
+    );
+
+  // These four queries are independent of each other — run concurrently
+  // instead of paying sequential network round trips.
+  const [allProducts, expiringSoonRaw, expiredRaw, stockValueRows] = await Promise.all([
     listProducts(orgId),
     expBase.where(
       and(
@@ -366,6 +380,7 @@ export async function dashboardStats(orgId: string): Promise<DashboardStats> {
           lt(stockBatches.expiryDate, todayStr),
         ),
       ),
+    stockValueQuery,
   ]);
 
   const lowStock = allProducts.filter(
@@ -374,10 +389,7 @@ export async function dashboardStats(orgId: string): Promise<DashboardStats> {
   const outOfStock = allProducts.filter(
     (p) => p.isActive && p.currentStock <= 0,
   ).length;
-  const stockValue = allProducts.reduce(
-    (s, p) => s + p.currentStock * p.costPrice,
-    0,
-  );
+  const stockValue = Number(stockValueRows[0]?.value ?? 0);
   const expiringSoon = expiringSoonRaw.map((r) => ({
     ...r,
     expiryDate: r.expiryDate!,

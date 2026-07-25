@@ -24,6 +24,7 @@ type OrgSettings = {
   bankUpi: string | null;
   invoicePrefix: string;
   quotePrefix: string;
+  invoiceStartingNumber: number;
   defaultTerms: string | null;
   defaultNotes: string | null;
 };
@@ -198,6 +199,25 @@ export function SettingsForm({ org }: { org: OrgSettings }) {
             defaultValue={org.quotePrefix}
             placeholder="QUO"
           />
+          <div>
+            <label className="label" htmlFor="invoiceStartingNumber">
+              Last invoice number issued before this app
+            </label>
+            <input
+              id="invoiceStartingNumber"
+              name="invoiceStartingNumber"
+              type="number"
+              min={0}
+              step={1}
+              defaultValue={org.invoiceStartingNumber}
+              placeholder="0"
+              className="input"
+            />
+            <p className="mt-1 text-xs text-(--color-muted)">
+              If you&apos;ve already billed customers elsewhere, enter your last bill number
+              (e.g. 143) so your next invoice here continues at 144.
+            </p>
+          </div>
           <div className="sm:col-span-2">
             <label className="label" htmlFor="defaultTerms">
               Default terms & conditions

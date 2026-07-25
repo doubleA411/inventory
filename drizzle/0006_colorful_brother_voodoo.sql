@@ -1,0 +1,1 @@
+ALTER TABLE "stock_batches" ADD COLUMN "unit_cost" numeric(14, 2);

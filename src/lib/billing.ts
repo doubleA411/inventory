@@ -138,7 +138,7 @@ export async function saveInvoiceCore(
           .where(and(eq(invoices.organizationId, org.id), eq(invoices.fy, fy)))
           .orderBy(desc(invoices.seq))
           .limit(1);
-        const seq = (last?.seq ?? 0) + 1;
+        const seq = Math.max(last?.seq ?? 0, org.invoiceStartingNumber) + 1;
         const number = formatDocNumber(org.invoicePrefix, fy, seq);
         const [row] = await tx
           .insert(invoices)

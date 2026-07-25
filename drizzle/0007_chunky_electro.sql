@@ -1,0 +1,1 @@
+ALTER TABLE "organizations" ADD COLUMN "invoice_starting_number" integer DEFAULT 0 NOT NULL;

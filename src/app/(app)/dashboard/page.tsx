@@ -37,7 +37,7 @@ export default async function DashboardPage() {
         <StatCard
           label="Stock value"
           value={fmtMoney(stats.stockValue, organization.currency)}
-          hint="based on cost price"
+          hint="valued at each batch's cost"
         />
       </div>
 

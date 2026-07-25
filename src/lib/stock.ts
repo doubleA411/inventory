@@ -23,6 +23,8 @@ export type ApplyMovementInput = {
   /** Restock only: optional expiry + received date for the created batch. */
   expiryDate?: string | null;
   receivedDate?: string | null;
+  /** Restock only: cost per stock unit for this batch. Falls back to the product's last cost price when omitted. */
+  unitCost?: number | null;
   /** Adjustment only: whether the correction adds or removes stock. */
   direction?: "increase" | "decrease";
   /** Usage/waste: the bill/invoice this stock was consumed for (optional). */
@@ -109,10 +111,25 @@ export async function applyMovement(
 
       let createdBatchId: string | null = null;
       let delta: number;
+      // Total cost of stock drawn down (usage/waste), computed per-batch from
+      // the actual price each batch was bought at, so a usage that spans
+      // batches bought at different prices blends both correctly.
+      let drawdownCost = 0;
+      // Unit cost to snapshot on the movement itself (increase side).
+      let movementUnitCost: number | null = null;
+
+      // Best-known cost for batches with no real purchase price of their own
+      // (adjustment increases) — falls back to the product's last cost.
+      const fallbackCost = product.costPrice != null ? Number(product.costPrice) : null;
 
       if (isIncrease(input)) {
         // Additive: create a batch.
         delta = qtyInStock;
+        const batchCost =
+          input.type === "restock"
+            ? (input.unitCost ?? fallbackCost)
+            : fallbackCost; // adjustment increase: no real purchase price
+        movementUnitCost = batchCost;
         const [batch] = await tx
           .insert(stockBatches)
           .values({
@@ -121,10 +138,20 @@ export async function applyMovement(
             quantityRemaining: String(qtyInStock),
             expiryDate: input.expiryDate ?? null,
             receivedDate: input.receivedDate ?? undefined,
+            unitCost: batchCost != null ? String(batchCost) : null,
             note: input.note ?? null,
           })
           .returning();
         createdBatchId = batch.id;
+
+        // A restock's price becomes the product's new "current" cost, used
+        // as the default for the next restock and for adjustment batches.
+        if (input.type === "restock" && input.unitCost != null) {
+          await tx
+            .update(products)
+            .set({ costPrice: String(input.unitCost) })
+            .where(eq(products.id, product.id));
+        }
       } else {
         // Subtractive (usage / waste): FEFO draw-down.
         delta = -qtyInStock;
@@ -161,6 +188,8 @@ export async function applyMovement(
           const take = Math.min(bRemaining, remaining);
           const newRemaining = roundQty(bRemaining - take);
           remaining = roundQty(remaining - take);
+          const batchCost = b.unitCost != null ? Number(b.unitCost) : fallbackCost;
+          if (batchCost != null) drawdownCost += take * batchCost;
           await tx
             .update(stockBatches)
             .set({ quantityRemaining: String(newRemaining) })
@@ -183,10 +212,19 @@ export async function applyMovement(
         .set({ currentStock: String(balanceAfter) })
         .where(eq(products.id, product.id));
 
-      // Cost snapshot from the product's cost price.
-      const unitCost = product.costPrice != null ? Number(product.costPrice) : null;
-      const costAmount =
-        unitCost != null ? Math.round(Math.abs(qtyInStock) * unitCost * 100) / 100 : 0;
+      // Cost snapshot: increases use the batch's own cost; drawdowns
+      // (usage/waste/adjustment-decrease) use the actual per-batch costs
+      // accumulated above, blended across whatever batches were consumed.
+      const costAmount = isIncrease(input)
+        ? movementUnitCost != null
+          ? Math.round(Math.abs(qtyInStock) * movementUnitCost * 100) / 100
+          : 0
+        : Math.round(drawdownCost * 100) / 100;
+      const unitCost = isIncrease(input)
+        ? movementUnitCost
+        : qtyInStock > 1e-9
+          ? Math.round((drawdownCost / qtyInStock) * 100) / 100
+          : null;
 
       const [movement] = await tx
         .insert(stockMovements)

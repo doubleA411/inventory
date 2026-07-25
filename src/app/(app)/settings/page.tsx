@@ -87,6 +87,7 @@ export default async function SettingsPage() {
             bankUpi: o.bankUpi,
             invoicePrefix: o.invoicePrefix,
             quotePrefix: o.quotePrefix,
+            invoiceStartingNumber: o.invoiceStartingNumber,
             defaultTerms: o.defaultTerms,
             defaultNotes: o.defaultNotes,
           }}

@@ -174,6 +174,80 @@ describe("applyMovement (FEFO + conversion + ledger)", () => {
     if (!use.ok) expect(use.error).toMatch(/not enough stock/i);
   });
 
+  it("restock at a cost stamps the batch and updates the product's cost price", async () => {
+    const pid = await makeProduct(`COST-${Date.now()}`, kgId);
+    const r = await applyMovement({
+      organizationId: orgId,
+      productId: pid,
+      type: "restock",
+      quantity: 10,
+      unitId: kgId,
+      unitCost: 80,
+    });
+    expect(r.ok).toBe(true);
+
+    const { stockBatches: batchesTable, products: productsTable } = await import(
+      "@/lib/db/schema"
+    );
+    const [batch] = await db
+      .select()
+      .from(batchesTable)
+      .where(eq(batchesTable.productId, pid));
+    expect(Number(batch.unitCost)).toBe(80);
+
+    const [product] = await db
+      .select()
+      .from(productsTable)
+      .where(eq(productsTable.id, pid));
+    expect(Number(product.costPrice)).toBe(80);
+  });
+
+  it("blends per-batch cost across FEFO draw-down when prices changed between restocks", async () => {
+    const pid = await makeProduct(`BLEND-${Date.now()}`, kgId);
+    const earlier = "2026-07-24";
+    const later = "2026-07-31";
+    // 5kg bought at 80/kg, expiring sooner (drawn first).
+    await applyMovement({
+      organizationId: orgId,
+      productId: pid,
+      type: "restock",
+      quantity: 5,
+      unitId: kgId,
+      unitCost: 80,
+      expiryDate: earlier,
+    });
+    // 5kg bought later at 100/kg, expiring later (drawn second).
+    await applyMovement({
+      organizationId: orgId,
+      productId: pid,
+      type: "restock",
+      quantity: 5,
+      unitId: kgId,
+      unitCost: 100,
+      expiryDate: later,
+    });
+
+    // Use 8kg: 5kg from the 80/kg batch + 3kg from the 100/kg batch.
+    const use = await applyMovement({
+      organizationId: orgId,
+      productId: pid,
+      type: "usage",
+      quantity: 8,
+      unitId: kgId,
+    });
+    expect(use.ok).toBe(true);
+
+    const { stockMovements: movementsTable } = await import("@/lib/db/schema");
+    const [movement] = await db
+      .select()
+      .from(movementsTable)
+      .where(eq(movementsTable.id, use.ok ? use.movementId : ""));
+    // costAmount = 5*80 + 3*100 = 700
+    expect(Number(movement.costAmount)).toBe(700);
+    // unitCost = 700 / 8 = 87.5 (weighted average across the two batches)
+    expect(Number(movement.unitCost)).toBe(87.5);
+  });
+
   it("adjustment decrease removes stock", async () => {
     const pid = await makeProduct(`ADJ-${Date.now()}`, kgId);
     await applyMovement({

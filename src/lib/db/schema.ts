@@ -71,6 +71,9 @@ export const organizations = pgTable("organizations", {
   // Document numbering & defaults
   invoicePrefix: text("invoice_prefix").notNull().default("INV"),
   quotePrefix: text("quote_prefix").notNull().default("QUO"),
+  // Last invoice number issued outside this app, if migrating from another
+  // system — the next generated invoice's seq will be this + 1.
+  invoiceStartingNumber: integer("invoice_starting_number").notNull().default(0),
   defaultTerms: text("default_terms"),
   defaultNotes: text("default_notes"),
 
@@ -225,6 +228,10 @@ export const stockBatches = pgTable(
       .default("0"),
     expiryDate: date("expiry_date"), // nullable — not everything expires
     receivedDate: date("received_date").notNull().defaultNow(),
+    // What this batch actually cost per stock unit (restock price at the time
+    // it was received). Null for batches created before this existed, or for
+    // adjustment-created batches with no real purchase price.
+    unitCost: numeric("unit_cost", { precision: 14, scale: 2 }),
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

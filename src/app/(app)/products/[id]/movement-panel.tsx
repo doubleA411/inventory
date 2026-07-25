@@ -27,11 +27,13 @@ export function MovementPanel({
   units,
   defaultUnitId,
   invoices = [],
+  lastCostPrice,
 }: {
   productId: string;
   units: Unit[];
   defaultUnitId: string;
   invoices?: InvoiceOption[];
+  lastCostPrice?: number | null;
 }) {
   const [type, setType] = useState<MovementType>("restock");
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
@@ -115,11 +117,29 @@ export function MovementPanel({
         </div>
 
         {type === "restock" && (
-          <div>
-            <label className="label" htmlFor="expiryDate">
-              Expiry date (optional)
-            </label>
-            <input id="expiryDate" name="expiryDate" type="date" className="input" />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label" htmlFor="expiryDate">
+                Expiry date (optional)
+              </label>
+              <input id="expiryDate" name="expiryDate" type="date" className="input" />
+            </div>
+            <div>
+              <label className="label" htmlFor="unitCost">
+                Cost per unit (optional)
+              </label>
+              <input
+                id="unitCost"
+                name="unitCost"
+                type="number"
+                step="any"
+                min="0"
+                className="input"
+                placeholder={
+                  lastCostPrice != null ? `Last: ${lastCostPrice}` : "0.00"
+                }
+              />
+            </div>
           </div>
         )}
 

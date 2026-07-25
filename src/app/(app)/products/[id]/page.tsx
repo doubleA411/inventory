@@ -141,6 +141,7 @@ export default async function ProductDetailPage({
                   <thead>
                     <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
                       <th className="px-4 py-2 font-medium">Remaining</th>
+                      <th className="px-4 py-2 font-medium">Cost/unit</th>
                       <th className="px-4 py-2 font-medium">Received</th>
                       <th className="px-4 py-2 font-medium">Expiry</th>
                     </tr>
@@ -160,6 +161,9 @@ export default async function ProductDetailPage({
                         <tr key={b.id}>
                           <td className="px-4 py-2 tabular-nums font-medium">
                             {fmtQty(b.quantityRemaining)} {unit.symbol}
+                          </td>
+                          <td className="px-4 py-2 tabular-nums text-(--color-muted)">
+                            {b.unitCost != null ? fmtMoney(b.unitCost, cur) : "—"}
                           </td>
                           <td className="px-4 py-2 text-(--color-muted)">
                             {fmtDate(b.receivedDate)}
@@ -258,6 +262,7 @@ export default async function ProductDetailPage({
               units={convUnits}
               defaultUnitId={product.stockUnitId}
               invoices={billOptions}
+              lastCostPrice={product.costPrice != null ? Number(product.costPrice) : null}
             />
           </div>
         </div>

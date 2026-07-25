@@ -41,6 +41,7 @@ const settingsSchema = z.object({
   bankUpi: z.string().trim().optional().nullable(),
   invoicePrefix: z.string().trim().min(1).default("INV"),
   quotePrefix: z.string().trim().min(1).default("QUO"),
+  invoiceStartingNumber: z.coerce.number().int().min(0).default(0),
   defaultTerms: z.string().trim().optional().nullable(),
   defaultNotes: z.string().trim().optional().nullable(),
 });
@@ -70,6 +71,7 @@ export async function updateSettingsAction(
     bankUpi: str(formData.get("bankUpi")),
     invoicePrefix: formData.get("invoicePrefix") || "INV",
     quotePrefix: formData.get("quotePrefix") || "QUO",
+    invoiceStartingNumber: formData.get("invoiceStartingNumber") || 0,
     defaultTerms: str(formData.get("defaultTerms")),
     defaultNotes: str(formData.get("defaultNotes")),
   });
@@ -105,6 +107,7 @@ export async function updateSettingsAction(
       bankUpi: d.bankUpi ?? null,
       invoicePrefix: d.invoicePrefix,
       quotePrefix: d.quotePrefix,
+      invoiceStartingNumber: d.invoiceStartingNumber,
       defaultTerms: d.defaultTerms ?? null,
       defaultNotes: d.defaultNotes ?? null,
     })

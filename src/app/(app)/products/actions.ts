@@ -100,6 +100,7 @@ const movementSchema = z.object({
   unitId: z.string().uuid("Choose a unit"),
   direction: z.enum(["increase", "decrease"]).optional(),
   expiryDate: z.string().optional().nullable(),
+  unitCost: z.coerce.number().min(0).optional().nullable(),
   note: z.string().trim().optional().nullable(),
   invoiceId: z.string().uuid().optional().nullable(),
 });
@@ -116,6 +117,7 @@ export async function logMovementAction(
     unitId: formData.get("unitId"),
     direction: str(formData.get("direction")) ?? undefined,
     expiryDate: str(formData.get("expiryDate")),
+    unitCost: str(formData.get("unitCost")),
     note: str(formData.get("note")),
     invoiceId: str(formData.get("invoiceId")) ?? undefined,
   });
@@ -133,6 +135,7 @@ export async function logMovementAction(
     note: d.note ?? null,
     direction: d.direction,
     expiryDate: d.type === "restock" ? d.expiryDate ?? null : null,
+    unitCost: d.type === "restock" ? d.unitCost ?? null : null,
     invoiceId:
       d.type === "usage" || d.type === "waste" ? d.invoiceId ?? null : null,
   });
