@@ -49,6 +49,8 @@ export default async function QuotationPrintPage({
               rate: i.rate,
               taxRate: i.taxRate,
               amount: i.amount,
+              menuItems: i.menuItems,
+              eventDate: i.eventDate,
             })),
             subtotal: quotation.subtotal,
             cgst: half,

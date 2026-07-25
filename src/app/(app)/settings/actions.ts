@@ -134,6 +134,28 @@ export async function saveLetterheadMargins(
   return { ok: true };
 }
 
+export async function saveDocAppearance(
+  headingColor: string,
+  bodyColor: string,
+  fontSize: number,
+): Promise<ActionState> {
+  const { organization } = await requireRole("admin");
+  const hex = /^#[0-9a-fA-F]{6}$/;
+  if (!hex.test(headingColor) || !hex.test(bodyColor)) {
+    return { error: "Colors must be valid hex values." };
+  }
+  await db
+    .update(organizations)
+    .set({
+      docHeadingColor: headingColor,
+      docBodyColor: bodyColor,
+      docFontSize: Math.max(10, Math.min(16, Math.round(fontSize))),
+    })
+    .where(eq(organizations.id, organization.id));
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
 const ASSET_FIELDS = {
   logoUrl: { types: ALLOWED_IMAGE_TYPES, folder: "logos" },
   letterheadUrl: { types: ALLOWED_LETTERHEAD_TYPES, folder: "letterheads" },

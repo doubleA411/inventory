@@ -46,6 +46,8 @@ export default async function EditQuotationPage({
             unit: i.unit,
             rate: i.rate,
             taxRate: i.taxRate,
+            menuItems: i.menuItems,
+            eventDate: i.eventDate,
           })),
         }}
       />

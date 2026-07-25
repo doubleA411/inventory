@@ -39,6 +39,7 @@ export default async function EditInvoicePage({
           secondDate: invoice.dueDate,
           notes: invoice.notes,
           terms: invoice.terms,
+          applyGst: invoice.docType === "tax_invoice",
           items: items.map((i) => ({
             description: i.description,
             hsnSac: i.hsnSac,
@@ -46,6 +47,8 @@ export default async function EditInvoicePage({
             unit: i.unit,
             rate: i.rate,
             taxRate: i.taxRate,
+            menuItems: i.menuItems,
+            eventDate: i.eventDate,
           })),
         }}
       />

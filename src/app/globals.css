@@ -165,6 +165,28 @@ body {
 .a4-content {
   position: relative;
   z-index: 1;
+  --doc-base: 12px;
+}
+
+/* Sized relative to the org's configured base font size via --doc-base
+   (a custom property, so it doesn't compound when nested unlike em/rem). */
+.doc-text-xs {
+  font-size: var(--doc-base);
+}
+.doc-text-sm {
+  font-size: calc(var(--doc-base) * 1.167);
+}
+.doc-text-lg {
+  font-size: calc(var(--doc-base) * 1.5);
+}
+.doc-text-xl {
+  font-size: calc(var(--doc-base) * 1.667);
+}
+
+/* Menu page precedes the priced document — gap on screen, hard page break
+   when printed. */
+.menu-page {
+  margin-bottom: 24px;
 }
 
 /* Screen wrapper around the page (gray backdrop). Collapses in print. */
@@ -199,5 +221,16 @@ body {
     margin: 0 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+  .menu-page {
+    break-after: page;
+    page-break-after: always;
+  }
+  /* Each menu page is packed with as many sessions as fit (see
+     chunkMenuLines in document-view.tsx) and stays within one physical
+     page — this is a safety net in case that estimate runs slightly long. */
+  .menu-session {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
   }
 }

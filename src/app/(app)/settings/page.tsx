@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui";
 import { SettingsForm } from "./settings-form";
 import { AssetUpload } from "./asset-upload";
 import { LetterheadLayout } from "./letterhead-layout";
+import { DocAppearance } from "./doc-appearance";
 
 export default async function SettingsPage() {
   const { organization: o } = await requireRole("admin");
@@ -64,6 +65,20 @@ export default async function SettingsPage() {
               />
             </div>
           )}
+        </div>
+
+        <div className="card p-6">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold">Document appearance</h2>
+            <p className="mt-0.5 text-sm text-(--color-muted)">
+              Heading and body text colors, and base font size, for printed documents.
+            </p>
+          </div>
+          <DocAppearance
+            initialHeadingColor={o.docHeadingColor}
+            initialBodyColor={o.docBodyColor}
+            initialFontSize={o.docFontSize}
+          />
         </div>
 
         <SettingsForm
