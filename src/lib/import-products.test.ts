@@ -56,6 +56,53 @@ describe("importProducts (CSV/XLSX import)", () => {
       .where(eq(stockBatches.productId, row.id));
     expect(batches).toHaveLength(1);
     expect(Number(batches[0].quantityRemaining)).toBe(25);
+    // The opening-stock batch must carry the CSV's cost price, so imported
+    // stock is valued at what it actually cost rather than being repriced by
+    // a later restock.
+    expect(Number(batches[0].unitCost)).toBe(30);
+  });
+
+  it("leaves the opening batch's cost unset when the CSV has no cost price", async () => {
+    const name = `Import NoCost ${run}`;
+    const result = await importProducts(orgId, userId, [
+      { name, unit: "kg", openingStock: 10 },
+    ]);
+    expect(result.inserted).toBe(1);
+
+    const row = await trackAndFind(name);
+    const batches = await db
+      .select()
+      .from(stockBatches)
+      .where(eq(stockBatches.productId, row.id));
+    expect(batches).toHaveLength(1);
+    expect(batches[0].unitCost).toBeNull();
+  });
+
+  it("does not reprice imported opening stock when a later restock costs more", async () => {
+    const name = `Import Reprice ${run}`;
+    await importProducts(orgId, userId, [
+      { name, unit: "kg", openingStock: 10, costPrice: 40 },
+    ]);
+    const row = await trackAndFind(name);
+
+    const { applyMovement } = await import("@/lib/stock");
+    await applyMovement({
+      organizationId: orgId,
+      productId: row.id,
+      type: "restock",
+      quantity: 10,
+      unitId: row.stockUnitId,
+      unitCost: 90,
+    });
+
+    const batches = await db
+      .select()
+      .from(stockBatches)
+      .where(eq(stockBatches.productId, row.id));
+    const costs = batches.map((b) => Number(b.unitCost)).sort((a, b) => a - b);
+    // The imported batch stays at 40 even though the product's cost price is
+    // now 90 — the whole point of per-batch costing.
+    expect(costs).toEqual([40, 90]);
   });
 
   it("matches units by symbol or full name, case-insensitively", async () => {

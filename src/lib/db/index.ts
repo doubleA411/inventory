@@ -18,7 +18,11 @@ const globalForDb = globalThis as unknown as {
 const client =
   globalForDb.__pgClient ??
   postgres(connectionString, {
-    max: 10,
+    // Each serverless instance holds its own pool, so a large `max` multiplies
+    // across warm instances and exhausts the hosted pooler's client limit
+    // (Supabase's session pooler allows only 15 in total). Local Postgres has
+    // no such ceiling and benefits from real parallelism.
+    max: isLocalDb ? 10 : 1,
     prepare: false, // required for Supabase's transaction pooler
     ssl: isLocalDb ? false : "require",
   });
