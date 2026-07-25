@@ -98,6 +98,20 @@ export default async function InvoiceViewPage({
                         {i.hsnSac && (
                           <span className="ml-2 text-xs text-(--color-muted)">{i.hsnSac}</span>
                         )}
+                        {!!i.menuItems?.length && (
+                          <div className="mt-1.5 rounded-md bg-(--color-bg) p-2">
+                            {i.eventDate && (
+                              <div className="mb-1 text-xs font-medium text-(--color-muted)">
+                                {fmtDate(i.eventDate)}
+                              </div>
+                            )}
+                            <ol className="list-decimal space-y-0.5 pl-4 text-xs text-(--color-muted)">
+                              {i.menuItems.map((m, mi) => (
+                                <li key={mi}>{m}</li>
+                              ))}
+                            </ol>
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums">
                         {Number(i.quantity)} {i.unit ?? ""}

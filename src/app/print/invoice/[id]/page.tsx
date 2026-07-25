@@ -49,6 +49,8 @@ export default async function InvoicePrintPage({
               taxRate: i.taxRate,
               taxableValue: i.taxableValue,
               amount: i.amount,
+              menuItems: i.menuItems,
+              eventDate: i.eventDate,
             })),
             subtotal: invoice.subtotal,
             cgst: invoice.cgst,

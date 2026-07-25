@@ -10,6 +10,7 @@ import {
   timestamp,
   unique,
   index,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -61,6 +62,10 @@ export const organizations = pgTable("organizations", {
   letterheadMarginTop: numeric("letterhead_margin_top").notNull().default("170"),
   letterheadMarginBottom: numeric("letterhead_margin_bottom").notNull().default("120"),
   signatureUrl: text("signature_url"),
+  // Printed document text appearance
+  docHeadingColor: text("doc_heading_color").notNull().default("#1f2937"),
+  docBodyColor: text("doc_body_color").notNull().default("#4b5563"),
+  docFontSize: integer("doc_font_size").notNull().default(12), // px, base body size
 
   // Bank details (invoice footer)
   bankName: text("bank_name"),
@@ -430,6 +435,12 @@ export const quotationItems = pgTable("quotation_items", {
   rate: numeric("rate", { precision: 14, scale: 2 }).notNull().default("0"),
   taxRate: numeric("tax_rate", { precision: 5, scale: 2 }).notNull().default("0"),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull().default("0"),
+  // Menu dish names under this line item — catering menu page, printed ahead
+  // of the priced tariff. Not used for pricing.
+  menuItems: jsonb("menu_items").$type<string[]>(),
+  // Event/function date this line's menu items belong to — groups the
+  // printed menu page. Not shown on the priced tariff itself.
+  eventDate: date("event_date"),
 });
 
 export const invoices = pgTable(
@@ -496,6 +507,8 @@ export const invoiceItems = pgTable("invoice_items", {
   sgst: numeric("sgst", { precision: 14, scale: 2 }).notNull().default("0"),
   igst: numeric("igst", { precision: 14, scale: 2 }).notNull().default("0"),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull().default("0"),
+  menuItems: jsonb("menu_items").$type<string[]>(),
+  eventDate: date("event_date"),
 });
 
 export const payments = pgTable(

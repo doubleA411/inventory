@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Trash2, UserPlus } from "lucide-react";
+import { ChevronDown, ChevronRight, ListPlus, Plus, Trash2, UserPlus } from "lucide-react";
 import { computeTotals } from "@/lib/tax";
 import { fmtMoney } from "@/lib/utils";
 import { INDIA_STATES } from "@/lib/india-states";
@@ -18,6 +18,8 @@ type ItemRow = {
   unit: string;
   rate: string;
   taxRate: string;
+  menuItems: string[];
+  eventDate: string;
 };
 
 export type DocEditorInitial = {
@@ -27,6 +29,7 @@ export type DocEditorInitial = {
   secondDate?: string | null; // validUntil (quote) or dueDate (invoice)
   notes?: string | null;
   terms?: string | null;
+  applyGst?: boolean; // invoice only
   items?: {
     description: string;
     hsnSac?: string | null;
@@ -34,6 +37,8 @@ export type DocEditorInitial = {
     unit?: string | null;
     rate: number | string;
     taxRate: number | string;
+    menuItems?: string[] | null;
+    eventDate?: string | null;
   }[];
 };
 
@@ -50,6 +55,8 @@ const newRow = (over: Partial<ItemRow> = {}): ItemRow => ({
   unit: "",
   rate: "",
   taxRate: "",
+  menuItems: [],
+  eventDate: "",
   ...over,
 });
 
@@ -97,10 +104,23 @@ export function DocEditor({
             unit: i.unit ?? "",
             rate: String(i.rate),
             taxRate: String(i.taxRate),
+            menuItems: i.menuItems ?? [],
+            eventDate: i.eventDate ?? "",
           }),
         )
       : [newRow({ taxRate: gstEnabled ? defaultTaxRate : "0", hsnSac: defaultSac ?? "" })],
   );
+  const [applyGst, setApplyGst] = useState(initial?.applyGst ?? true);
+  const effectiveGst = kind === "invoice" ? gstEnabled && applyGst : gstEnabled;
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  function toggleMenuItems(key: string) {
+    setExpandedRows((s) => {
+      const next = new Set(s);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   // Inline new-customer form.
   const [showNewCust, setShowNewCust] = useState(false);
@@ -120,9 +140,9 @@ export function DocEditor({
           rate: Number(r.rate) || 0,
           taxRate: Number(r.taxRate) || 0,
         })),
-        { gstEnabled, intraState },
+        { gstEnabled: effectiveGst, intraState },
       ),
-    [rows, gstEnabled, intraState],
+    [rows, effectiveGst, intraState],
   );
 
   function updateRow(key: string, patch: Partial<ItemRow>) {
@@ -168,6 +188,7 @@ export function DocEditor({
             dueDate: secondDate || null,
             notes,
             terms,
+            applyGst: gstEnabled ? applyGst : undefined,
             items: rows.map((r) => ({
               description: r.description,
               hsnSac: r.hsnSac || null,
@@ -175,6 +196,8 @@ export function DocEditor({
               unit: r.unit || null,
               rate: Number(r.rate) || 0,
               taxRate: Number(r.taxRate) || 0,
+              menuItems: r.menuItems,
+              eventDate: r.eventDate || null,
             })),
           }
         : {
@@ -191,6 +214,8 @@ export function DocEditor({
               unit: r.unit || null,
               rate: Number(r.rate) || 0,
               taxRate: Number(r.taxRate) || 0,
+              menuItems: r.menuItems,
+              eventDate: r.eventDate || null,
             })),
           };
 
@@ -324,7 +349,8 @@ export function DocEditor({
             </thead>
             <tbody className="divide-y divide-(--color-border)">
               {rows.map((r, idx) => (
-                <tr key={r.key}>
+                <Fragment key={r.key}>
+                <tr>
                   <td className="px-2 py-1.5 min-w-[220px]">
                     <input
                       className="input"
@@ -380,15 +406,55 @@ export function DocEditor({
                     {fmtMoney(totals.lines[idx]?.amount ?? 0, currency)}
                   </td>
                   <td className="px-2 py-1.5">
-                    <button
-                      type="button"
-                      className="btn-ghost"
-                      onClick={() => removeRow(r.key)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        title="Menu items"
+                        onClick={() => toggleMenuItems(r.key)}
+                      >
+                        {expandedRows.has(r.key) ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                        <ListPlus className="h-4 w-4" />
+                        {r.menuItems.length > 0 && (
+                          <span className="text-xs text-(--color-muted)">
+                            {r.menuItems.length}
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        onClick={() => removeRow(r.key)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
+                {expandedRows.has(r.key) && (
+                  <tr>
+                    <td colSpan={gstEnabled ? 8 : 7} className="bg-(--color-bg) px-4 py-3">
+                      <MenuItemsEditor
+                        eventDate={r.eventDate}
+                        onEventDateChange={(eventDate) => updateRow(r.key, { eventDate })}
+                        items={r.menuItems}
+                        onAdd={(text) =>
+                          updateRow(r.key, { menuItems: [...r.menuItems, text] })
+                        }
+                        onRemove={(i) =>
+                          updateRow(r.key, {
+                            menuItems: r.menuItems.filter((_, mi) => mi !== i),
+                          })
+                        }
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -423,14 +489,30 @@ export function DocEditor({
           </div>
         </div>
         <div className="card h-fit p-4">
+          {kind === "invoice" && gstEnabled && (
+            <label className="mb-3 flex items-start gap-2 border-b border-(--color-border) pb-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={applyGst}
+                onChange={(e) => setApplyGst(e.target.checked)}
+              />
+              <span>
+                Apply GST to this invoice
+                <span className="block text-xs text-(--color-muted)">
+                  Off issues a Bill of Supply instead of a Tax Invoice.
+                </span>
+              </span>
+            </label>
+          )}
           <Row label="Subtotal" value={fmtMoney(totals.subtotal, currency)} />
-          {gstEnabled && intraState && (
+          {effectiveGst && intraState && (
             <>
               <Row label={`CGST`} value={fmtMoney(totals.cgst, currency)} muted />
               <Row label={`SGST`} value={fmtMoney(totals.sgst, currency)} muted />
             </>
           )}
-          {gstEnabled && !intraState && (
+          {effectiveGst && !intraState && (
             <Row label="IGST" value={fmtMoney(totals.igst, currency)} muted />
           )}
           {kind === "invoice" && (
@@ -439,9 +521,11 @@ export function DocEditor({
           <div className="mt-2 border-t border-(--color-border) pt-2">
             <Row label="Total" value={fmtMoney(totals.total, currency)} bold />
           </div>
-          {!gstEnabled && (
+          {!effectiveGst && (
             <p className="mt-2 text-xs text-(--color-muted)">
-              Not GST-registered — this is a Bill of Supply (no tax).
+              {gstEnabled
+                ? "GST off for this invoice — this will be a Bill of Supply."
+                : "Not GST-registered — this is a Bill of Supply (no tax)."}
             </p>
           )}
         </div>
@@ -460,6 +544,75 @@ export function DocEditor({
         <Link href={base} className="btn-ghost">
           Cancel
         </Link>
+      </div>
+    </div>
+  );
+}
+
+function MenuItemsEditor({
+  eventDate,
+  onEventDateChange,
+  items,
+  onAdd,
+  onRemove,
+}: {
+  eventDate: string;
+  onEventDateChange: (value: string) => void;
+  items: string[];
+  onAdd: (text: string) => void;
+  onRemove: (index: number) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  function submit() {
+    if (draft.trim()) {
+      onAdd(draft.trim());
+      setDraft("");
+    }
+  }
+  return (
+    <div>
+      <label className="label mb-2 block">Event date</label>
+      <input
+        type="date"
+        className="input mb-3 w-52"
+        value={eventDate}
+        onChange={(e) => onEventDateChange(e.target.value)}
+      />
+      <p className="label mb-2">Menu items (printed as a numbered list on the menu page)</p>
+      {items.length > 0 && (
+        <ol className="mb-2 list-decimal space-y-1 pl-5 text-sm">
+          {items.map((m, i) => (
+            <li key={i}>
+              <div className="flex items-center justify-between gap-2">
+                <span>{m}</span>
+                <button
+                  type="button"
+                  className="btn-ghost px-1 py-0.5"
+                  onClick={() => onRemove(i)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+      <div className="flex gap-2">
+        <input
+          className="input"
+          placeholder="Add a menu item"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+        <button type="button" className="btn-outline shrink-0" onClick={submit}>
+          <Plus className="h-4 w-4" /> Add
+        </button>
       </div>
     </div>
   );

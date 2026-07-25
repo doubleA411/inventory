@@ -13,6 +13,8 @@ import {
 } from "@/lib/db/schema";
 import { computeTotals, financialYear, formatDocNumber } from "@/lib/tax";
 
+// Menu dish names and an event/function date under a line item — printed as
+// a menu page ahead of the priced document. Not used for pricing.
 const itemSchema = z.object({
   description: z.string().trim().min(1),
   hsnSac: z.string().trim().optional().nullable(),
@@ -20,6 +22,8 @@ const itemSchema = z.object({
   unit: z.string().trim().optional().nullable(),
   rate: z.coerce.number().min(0),
   taxRate: z.coerce.number().min(0).max(100),
+  menuItems: z.array(z.string().trim().min(1)).optional(),
+  eventDate: z.string().trim().optional().nullable(),
 });
 
 export const invoiceSchema = z.object({
@@ -28,6 +32,9 @@ export const invoiceSchema = z.object({
   issueDate: z.string().min(1),
   dueDate: z.string().optional().nullable(),
   reverseCharge: z.boolean().optional(),
+  // Per-invoice override of the org's GST default — off issues a bill of
+  // supply instead of a tax invoice. Ignored if the org isn't registered.
+  applyGst: z.boolean().optional(),
   notes: z.string().trim().optional().nullable(),
   terms: z.string().trim().optional().nullable(),
   items: z.array(itemSchema),
@@ -95,7 +102,7 @@ export async function saveInvoiceCore(
   }
 
   const { placeCode, intraState } = await placeOfSupply(org, d.customerId);
-  const gstEnabled = org.gstRegistered;
+  const gstEnabled = org.gstRegistered ? (d.applyGst ?? true) : false;
   const totals = computeTotals(
     d.items.map((i) => ({ quantity: i.quantity, rate: i.rate, taxRate: i.taxRate })),
     { gstEnabled, intraState },
@@ -182,6 +189,8 @@ export async function saveInvoiceCore(
           sgst: String(totals.lines[idx].sgst),
           igst: String(totals.lines[idx].igst),
           amount: String(totals.lines[idx].amount),
+          menuItems: i.menuItems?.length ? i.menuItems : null,
+          eventDate: i.eventDate || null,
         })),
       );
 
@@ -363,6 +372,8 @@ export async function saveQuotationCore(
           rate: String(i.rate),
           taxRate: String(i.taxRate),
           amount: String(totals.lines[idx].taxable),
+          menuItems: i.menuItems?.length ? i.menuItems : null,
+          eventDate: i.eventDate || null,
         })),
       );
       return quoteId!;
@@ -443,6 +454,8 @@ export async function convertToInvoiceCore(
       unit: i.unit,
       rate: Number(i.rate),
       taxRate: Number(i.taxRate),
+      menuItems: i.menuItems ?? undefined,
+      eventDate: i.eventDate,
     })),
   });
   if (!res.ok) return res;
