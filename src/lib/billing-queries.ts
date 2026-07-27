@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   customers,
@@ -50,6 +50,34 @@ export async function listQuotations(
     .leftJoin(customers, eq(quotations.customerId, customers.id))
     .where(and(...conds))
     .orderBy(desc(quotations.createdAt));
+}
+
+/**
+ * Lightweight list for event pickers (e.g. linking an expense) — customer
+ * name and the event's actual date (earliest per-line event date, falling
+ * back to the issue date) so events are recognisable, not just a number.
+ */
+export async function listQuotationsForPicker(orgId: string) {
+  const rows = await db
+    .select({
+      id: quotations.id,
+      number: quotations.number,
+      customerName: customers.name,
+      issueDate: quotations.issueDate,
+      earliestEventDate: sql<string | null>`min(${quotationItems.eventDate})`,
+    })
+    .from(quotations)
+    .leftJoin(customers, eq(quotations.customerId, customers.id))
+    .leftJoin(quotationItems, eq(quotationItems.quotationId, quotations.id))
+    .where(eq(quotations.organizationId, orgId))
+    .groupBy(quotations.id, customers.name)
+    .orderBy(desc(quotations.createdAt));
+  return rows.map((r) => ({
+    id: r.id,
+    number: r.number,
+    customerName: r.customerName,
+    eventDate: r.earliestEventDate ?? r.issueDate,
+  }));
 }
 
 export async function getQuotationFull(orgId: string, id: string) {
