@@ -1,18 +1,27 @@
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
-import { dashboardStats, recentMovements } from "@/lib/queries";
+import { dashboardStats, recentMovements, usageCostSummary } from "@/lib/queries";
+import { expensesTotal } from "@/lib/expenses";
 import { PageHeader, StatCard, Badge, EmptyState } from "@/components/ui";
 import { fmtQty, fmtMoney, fmtDate } from "@/lib/utils";
 import { MOVEMENT_META } from "@/lib/labels";
 import { AlertTriangle, Clock, PackageX } from "lucide-react";
 
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export default async function DashboardPage() {
   const { organization } = await requireAuth();
   const orgId = organization.id;
-  const [stats, recent] = await Promise.all([
+  const todayStr = today();
+  const [stats, recent, usageCost, expensesToday] = await Promise.all([
     dashboardStats(orgId),
     recentMovements(orgId, 12),
+    usageCostSummary(orgId),
+    expensesTotal(orgId, todayStr, todayStr),
   ]);
+  const todaysExpense = usageCost.today + expensesToday;
 
   return (
     <div>
@@ -33,6 +42,12 @@ export default async function DashboardPage() {
           label="Out of stock"
           value={stats.outOfStock}
           tone={stats.outOfStock ? "danger" : "default"}
+        />
+        <StatCard
+          label="Today's expense"
+          value={fmtMoney(todaysExpense, organization.currency)}
+          hint={`${fmtMoney(usageCost.today, organization.currency)} stock usage · ${fmtMoney(expensesToday, organization.currency)} other`}
+          href={`/expenses?from=${todayStr}&to=${todayStr}`}
         />
         <StatCard
           label="Stock value"

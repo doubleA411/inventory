@@ -560,12 +560,84 @@ export const invoiceItemsRelations = relations(invoiceItems, ({ one }) => ({
   }),
 }));
 
+// ---------------------------------------------------------------------------
+// Expenses: everything spent that isn't ingredient stock usage — kitchen
+// labor (per-cuisine masters), service staff, rentals, transport, etc.
+// Deliberately separate from stock_movements (which already tracks ingredient
+// cost via FEFO batches) — the two are combined at query time, never merged
+// into one table, so editing an expense can never desync the stock ledger.
+// ---------------------------------------------------------------------------
+
+export const expenseCategories = pgTable(
+  "expense_categories",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("expense_categories_org_name_uq").on(t.organizationId, t.name)],
+);
+
+export const expenses = pgTable(
+  "expenses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    categoryId: uuid("category_id").references(() => expenseCategories.id, {
+      onDelete: "set null",
+    }),
+    // Optional — an expense can belong to a specific event, or be a
+    // standalone day-to-day cost (e.g. diesel, general salaries).
+    quotationId: uuid("quotation_id").references(() => quotations.id, {
+      onDelete: "set null",
+    }),
+    invoiceId: uuid("invoice_id").references(() => invoices.id, {
+      onDelete: "set null",
+    }),
+    expenseDate: date("expense_date").notNull().defaultNow(),
+    description: text("description").notNull(),
+    // For labor-style entries: headcount * rate = amount (still editable).
+    headcount: numeric("headcount", { precision: 10, scale: 2 }),
+    rate: numeric("rate", { precision: 14, scale: 2 }),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("expenses_org_date_idx").on(t.organizationId, t.expenseDate),
+    index("expenses_quotation_idx").on(t.quotationId),
+  ],
+);
+
+export const expensesRelations = relations(expenses, ({ one }) => ({
+  category: one(expenseCategories, {
+    fields: [expenses.categoryId],
+    references: [expenseCategories.id],
+  }),
+  quotation: one(quotations, {
+    fields: [expenses.quotationId],
+    references: [quotations.id],
+  }),
+  invoice: one(invoices, {
+    fields: [expenses.invoiceId],
+    references: [invoices.id],
+  }),
+}));
+
 export type Customer = typeof customers.$inferSelect;
 export type Quotation = typeof quotations.$inferSelect;
 export type QuotationItem = typeof quotationItems.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
 export type InvoiceItem = typeof invoiceItems.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
+export type ExpenseCategory = typeof expenseCategories.$inferSelect;
+export type Expense = typeof expenses.$inferSelect;
 export type QuoteStatus = (typeof quoteStatusEnum.enumValues)[number];
 export type InvoiceStatus = (typeof invoiceStatusEnum.enumValues)[number];
 export type DocType = (typeof docTypeEnum.enumValues)[number];
