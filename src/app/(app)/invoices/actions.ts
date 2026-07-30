@@ -13,6 +13,7 @@ import {
   type PaymentInput,
   type SaveResult,
 } from "@/lib/billing";
+import { generateInvoiceShareToken, revokeInvoiceShareToken } from "@/lib/sharing";
 
 export async function saveInvoice(raw: InvoiceInput): Promise<SaveResult> {
   const { organization, user } = await requireRole("admin");
@@ -58,6 +59,21 @@ export async function deleteInvoice(id: string): Promise<void> {
   const { organization } = await requireRole("admin");
   await deleteInvoiceCore(organization.id, id);
   revalidatePath("/invoices");
+}
+
+/** Generate (or replace) this invoice's public share link. */
+export async function createInvoiceShareLink(id: string): Promise<{ token: string }> {
+  const { organization } = await requireRole("admin");
+  const token = await generateInvoiceShareToken(organization.id, id);
+  revalidatePath(`/invoices/${id}`);
+  return { token };
+}
+
+/** Revoke the public share link — the old link stops working immediately. */
+export async function revokeInvoiceShareLink(id: string): Promise<void> {
+  const { organization } = await requireRole("admin");
+  await revokeInvoiceShareToken(organization.id, id);
+  revalidatePath(`/invoices/${id}`);
 }
 
 export async function recordPayment(

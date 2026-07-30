@@ -3,13 +3,17 @@ import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { getInvoiceFull, displayInvoiceStatus } from "@/lib/billing-queries";
 import { eventExpenseTotal } from "@/lib/expenses";
+import { normalizeIndianMobile } from "@/lib/sharing";
 import { Badge } from "@/components/ui";
+import { ProfitabilityCard } from "@/components/profitability-card";
+import { ShareLink } from "@/components/share-link";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { amountInWords } from "@/lib/tax";
 import { INVOICE_STATUS_META } from "@/lib/labels";
-import { ArrowLeft, Pencil, Printer, Wallet } from "lucide-react";
+import { ArrowLeft, Pencil, Printer } from "lucide-react";
 import { PaymentForm } from "./payment-form";
 import { InvoiceActions } from "./invoice-actions";
+import { createInvoiceShareLink, revokeInvoiceShareLink } from "../actions";
 
 export default async function InvoiceViewPage({
   params,
@@ -78,6 +82,19 @@ export default async function InvoiceViewPage({
           />
         </div>
       </div>
+
+      {approved && (
+        <div className="mb-6">
+          <ShareLink
+            initialToken={invoice.shareToken}
+            shareBasePath="/share/invoice"
+            waMessage={`Hi${customer?.name ? " " + customer.name : ""}, here's your ${gstEnabled ? "invoice" : "bill"} ${invoice.number} from ${organization.name} for ${fmtMoney(invoice.total, cur)}.`}
+            waPhone={normalizeIndianMobile(customer?.phone)}
+            onCreate={createInvoiceShareLink.bind(null, id)}
+            onRevoke={revokeInvoiceShareLink.bind(null, id)}
+          />
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Items + totals */}
@@ -178,20 +195,15 @@ export default async function InvoiceViewPage({
             {amountInWords(total)}
           </p>
 
-          {expenseSummary.count > 0 && (
-            <Link
-              href={`/expenses?quotationId=${invoice.quotationId}`}
-              className="card flex items-center justify-between p-4 hover:bg-(--color-bg)"
-            >
-              <span className="flex items-center gap-2 text-sm">
-                <Wallet className="h-4 w-4 text-(--color-muted)" />
-                Expenses for this event ({expenseSummary.count})
-              </span>
-              <span className="text-sm font-semibold tabular-nums">
-                {fmtMoney(expenseSummary.total, cur)}
-              </span>
-            </Link>
-          )}
+          <ProfitabilityCard
+            revenue={total}
+            cost={expenseSummary.total}
+            expenseCount={expenseSummary.count}
+            cur={cur}
+            expensesHref={
+              invoice.quotationId ? `/expenses?quotationId=${invoice.quotationId}` : "/expenses"
+            }
+          />
         </div>
 
         {/* Payments */}

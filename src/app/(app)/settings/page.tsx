@@ -1,12 +1,21 @@
 import { requireRole } from "@/lib/auth";
+import { listBackups, signedBackupUrl } from "@/lib/storage";
 import { PageHeader } from "@/components/ui";
 import { SettingsForm } from "./settings-form";
 import { AssetUpload } from "./asset-upload";
 import { LetterheadLayout } from "./letterhead-layout";
 import { DocAppearance } from "./doc-appearance";
+import { BackupPanel } from "./backup-panel";
 
 export default async function SettingsPage() {
   const { organization: o } = await requireRole("admin");
+  const backups = await listBackups(o.id);
+  const recentBackups = await Promise.all(
+    backups.slice(0, 10).map(async (b) => ({
+      ...b,
+      downloadUrl: await signedBackupUrl(o.id, b.name),
+    })),
+  );
 
   return (
     <div>
@@ -79,6 +88,16 @@ export default async function SettingsPage() {
             initialBodyColor={o.docBodyColor}
             initialFontSize={o.docFontSize}
           />
+        </div>
+
+        <div className="card p-6">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold">Backup</h2>
+            <p className="mt-0.5 text-sm text-(--color-muted)">
+              Download a full copy of your data.
+            </p>
+          </div>
+          <BackupPanel recent={recentBackups} />
         </div>
 
         <SettingsForm

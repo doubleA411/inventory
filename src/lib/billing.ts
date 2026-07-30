@@ -29,6 +29,10 @@ const itemSchema = z.object({
 export const invoiceSchema = z.object({
   id: z.string().uuid().optional(),
   customerId: z.string().uuid().nullable().optional(),
+  // Only meaningful on creation (see saveInvoiceCore) — set when converting
+  // a quotation, so profitability/expense views can find the invoice by
+  // its originating event. Left untouched on every subsequent edit.
+  quotationId: z.string().uuid().nullable().optional(),
   issueDate: z.string().min(1),
   dueDate: z.string().optional().nullable(),
   reverseCharge: z.boolean().optional(),
@@ -156,6 +160,7 @@ export async function saveInvoiceCore(
             fy,
             docType,
             customerId: d.customerId ?? null,
+            quotationId: d.quotationId ?? null,
             issueDate: d.issueDate,
             dueDate: d.dueDate || null,
             reverseCharge: d.reverseCharge ?? false,
@@ -444,6 +449,7 @@ export async function convertToInvoiceCore(
 
   const res = await saveInvoiceCore(org, userId, {
     customerId: q.customerId,
+    quotationId: q.id,
     issueDate: new Date().toISOString().slice(0, 10),
     notes: q.notes,
     terms: q.terms,

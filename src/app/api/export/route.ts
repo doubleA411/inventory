@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
-import { getAuthContext } from "@/lib/auth";
+import { getAuthContext, hasRole } from "@/lib/auth";
 import { listProducts, listAllMovements } from "@/lib/queries";
+import { buildBackup, BACKUP_SHEETS } from "@/lib/backup";
 import { fmtDate } from "@/lib/utils";
 import { MOVEMENT_META } from "@/lib/labels";
 
@@ -12,6 +13,42 @@ export async function GET(req: NextRequest) {
   const type = req.nextUrl.searchParams.get("type") ?? "products";
   const format = req.nextUrl.searchParams.get("format") ?? "csv";
   const orgId = ctx.organization.id;
+
+  // Full backup carries every table for the org, including customer and
+  // payment records — restrict to admins/owners, not any signed-in staff.
+  if (type === "backup") {
+    if (!hasRole(ctx.role, "admin")) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const backup = await buildBackup(orgId);
+    const stamp = backup.meta.exportedAt.slice(0, 10);
+
+    if (format === "xlsx") {
+      const workbook = XLSX.utils.book_new();
+      for (const sheet of BACKUP_SHEETS) {
+        const data = backup[sheet.key] as Record<string, unknown>[];
+        const worksheet = XLSX.utils.json_to_sheet(
+          data.length ? data : [{ [sheet.label]: "No data" }],
+        );
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheet.label.slice(0, 31));
+      }
+      const buf = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+      return new NextResponse(buf, {
+        headers: {
+          "Content-Type":
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="stackwise-backup-${stamp}.xlsx"`,
+        },
+      });
+    }
+
+    return new NextResponse(JSON.stringify(backup, null, 2), {
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Disposition": `attachment; filename="stackwise-backup-${stamp}.json"`,
+      },
+    });
+  }
 
   let rows: Record<string, unknown>[] = [];
   let filename = "export";
