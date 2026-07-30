@@ -15,6 +15,19 @@ import {
 
 export const EXPIRY_SOON_DAYS = 7;
 
+/**
+ * Movement in a product's purchase cost between its two most recent *costed*
+ * batches. For a buyer, "up" is bad news — onions got dearer — so callers
+ * should colour an increase as a warning, not as growth.
+ */
+export type CostTrend = {
+  direction: "up" | "down" | "flat";
+  latest: number;
+  previous: number;
+  /** null when the previous batch cost 0, which makes a percentage meaningless. */
+  changePct: number | null;
+};
+
 export type ProductRow = {
   id: string;
   name: string;
@@ -25,35 +38,97 @@ export type ProductRow = {
   reorderLevel: number;
   costPrice: number;
   isActive: boolean;
+  /** null until a product has two batches with a recorded unit cost. */
+  costTrend: CostTrend | null;
 };
+
+/**
+ * Latest-vs-previous unit cost per product, in one query.
+ *
+ * Batches with a null `unitCost` are skipped entirely (they predate the
+ * column, or came from an adjustment with no real purchase price), so this
+ * compares the two most recent batches that actually have a price — not
+ * simply the two most recent batches.
+ */
+export async function costTrendsByProduct(
+  orgId: string,
+): Promise<Map<string, CostTrend>> {
+  const ranked = db
+    .select({
+      productId: stockBatches.productId,
+      unitCost: stockBatches.unitCost,
+      rn: sql<number>`row_number() over (
+        partition by ${stockBatches.productId}
+        order by ${stockBatches.receivedDate} desc, ${stockBatches.createdAt} desc
+      )`.as("rn"),
+    })
+    .from(stockBatches)
+    .innerJoin(products, eq(stockBatches.productId, products.id))
+    .where(
+      and(eq(products.organizationId, orgId), isNotNull(stockBatches.unitCost)),
+    )
+    .as("ranked");
+
+  const rows = await db
+    .select({
+      productId: ranked.productId,
+      unitCost: ranked.unitCost,
+      rn: ranked.rn,
+    })
+    .from(ranked)
+    .where(lte(ranked.rn, 2));
+
+  const byProduct = new Map<string, { latest?: number; previous?: number }>();
+  for (const r of rows) {
+    const entry = byProduct.get(r.productId) ?? {};
+    if (Number(r.rn) === 1) entry.latest = Number(r.unitCost);
+    else entry.previous = Number(r.unitCost);
+    byProduct.set(r.productId, entry);
+  }
+
+  const trends = new Map<string, CostTrend>();
+  for (const [productId, { latest, previous }] of byProduct) {
+    if (latest == null || previous == null) continue; // need both to compare
+    const direction =
+      latest > previous ? "up" : latest < previous ? "down" : "flat";
+    const changePct =
+      previous === 0 ? null : ((latest - previous) / previous) * 100;
+    trends.set(productId, { direction, latest, previous, changePct });
+  }
+  return trends;
+}
 
 export async function listProducts(
   orgId: string,
   opts?: { search?: string; onlyLow?: boolean },
 ): Promise<ProductRow[]> {
-  const rows = await db
-    .select({
-      id: products.id,
-      name: products.name,
-      code: products.code,
-      categoryName: categories.name,
-      unitSymbol: units.symbol,
-      currentStock: products.currentStock,
-      reorderLevel: products.reorderLevel,
-      costPrice: products.costPrice,
-      isActive: products.isActive,
-    })
-    .from(products)
-    .leftJoin(categories, eq(products.categoryId, categories.id))
-    .innerJoin(units, eq(products.stockUnitId, units.id))
-    .where(eq(products.organizationId, orgId))
-    .orderBy(asc(products.name));
+  const [rows, trends] = await Promise.all([
+    db
+      .select({
+        id: products.id,
+        name: products.name,
+        code: products.code,
+        categoryName: categories.name,
+        unitSymbol: units.symbol,
+        currentStock: products.currentStock,
+        reorderLevel: products.reorderLevel,
+        costPrice: products.costPrice,
+        isActive: products.isActive,
+      })
+      .from(products)
+      .leftJoin(categories, eq(products.categoryId, categories.id))
+      .innerJoin(units, eq(products.stockUnitId, units.id))
+      .where(eq(products.organizationId, orgId))
+      .orderBy(asc(products.name)),
+    costTrendsByProduct(orgId),
+  ]);
 
   let mapped = rows.map((r) => ({
     ...r,
     currentStock: Number(r.currentStock),
     reorderLevel: Number(r.reorderLevel),
     costPrice: Number(r.costPrice ?? 0),
+    costTrend: trends.get(r.id) ?? null,
   }));
 
   if (opts?.search) {

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAuth, hasRole } from "@/lib/auth";
 import { listProducts } from "@/lib/queries";
 import { PageHeader, Badge, EmptyState } from "@/components/ui";
+import { CostTrendBadge } from "@/components/cost-trend";
 import { fmtQty } from "@/lib/utils";
 import { Plus, Search } from "lucide-react";
 
@@ -130,6 +131,11 @@ export default async function ProductsPage({
                             {p.code}
                           </span>
                         )}
+                        <CostTrendBadge
+                          trend={p.costTrend}
+                          currency={organization.currency}
+                          unitSymbol={p.unitSymbol}
+                        />
                       </td>
                       <td className="px-4 py-3 text-(--color-muted)">
                         {p.categoryName ?? "—"}

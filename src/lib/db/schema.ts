@@ -415,6 +415,9 @@ export const quotations = pgTable(
     approvedBy: uuid("approved_by").references(() => users.id, { onDelete: "set null" }),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Public view link token (e.g. for WhatsApp) — null until generated,
+    // cleared on revoke. Not a foreign key; just a random opaque credential.
+    shareToken: text("share_token").unique(),
   },
   (t) => [
     unique("quotations_org_number_uq").on(t.organizationId, t.number),
@@ -481,6 +484,7 @@ export const invoices = pgTable(
     approvedBy: uuid("approved_by").references(() => users.id, { onDelete: "set null" }),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    shareToken: text("share_token").unique(),
   },
   (t) => [
     unique("invoices_org_number_uq").on(t.organizationId, t.number),

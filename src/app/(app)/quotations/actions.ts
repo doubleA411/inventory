@@ -12,6 +12,7 @@ import {
   type QuotationInput,
   type SaveResult,
 } from "@/lib/billing";
+import { generateQuotationShareToken, revokeQuotationShareToken } from "@/lib/sharing";
 
 export async function saveQuotation(raw: QuotationInput): Promise<SaveResult> {
   const { organization, user } = await requireRole("admin");
@@ -55,6 +56,21 @@ export async function revokeQuotationApproval(id: string): Promise<void> {
   const { organization } = await requireRole("owner");
   await revokeQuotationApprovalCore(organization.id, id);
   revalidatePath("/quotations");
+  revalidatePath(`/quotations/${id}`);
+}
+
+/** Generate (or replace) this quotation's public share link. */
+export async function createQuotationShareLink(id: string): Promise<{ token: string }> {
+  const { organization } = await requireRole("admin");
+  const token = await generateQuotationShareToken(organization.id, id);
+  revalidatePath(`/quotations/${id}`);
+  return { token };
+}
+
+/** Revoke the public share link — the old link stops working immediately. */
+export async function revokeQuotationShareLink(id: string): Promise<void> {
+  const { organization } = await requireRole("admin");
+  await revokeQuotationShareToken(organization.id, id);
   revalidatePath(`/quotations/${id}`);
 }
 
