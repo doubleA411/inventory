@@ -65,8 +65,16 @@ export function ImportTool({ units }: { units: { symbol: string; name: string }[
   async function onFile(file: File) {
     setResult(null);
     setFileName(file.name);
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { cellDates: false });
+    // .csv has no embedded encoding — reading it as raw bytes makes SheetJS
+    // guess a legacy codepage and mangle any non-ASCII text (Tamil, etc).
+    // file.text() decodes as UTF-8 (the near-universal CSV export encoding)
+    // via the browser's native decoder, which is always correct. .xlsx/.xls
+    // don't have this ambiguity — they encode text in the container format
+    // itself — so those keep going through arrayBuffer as before.
+    const isCsv = /\.csv$/i.test(file.name);
+    const wb = isCsv
+      ? XLSX.read(await file.text(), { type: "string", cellDates: false })
+      : XLSX.read(await file.arrayBuffer(), { cellDates: false });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const json = XLSX.utils.sheet_to_json<Record<string, string>>(ws, {
       defval: "",

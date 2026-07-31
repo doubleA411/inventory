@@ -15,7 +15,7 @@
   --color-warn-soft: #fdf2e2;
   --color-ok: #15803d;
   --color-ok-soft: #e7f6ec;
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-geist-sans), var(--font-tamil), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 

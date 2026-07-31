@@ -82,11 +82,11 @@ export function AppShell({
   });
 
   return (
-    <div className="flex min-h-full">
-      {/* Desktop rail */}
+    <div className="flex h-dvh overflow-hidden">
+      {/* Desktop rail — fixed to the viewport so the menu never scrolls away */}
       <aside className="hidden w-64 shrink-0 flex-col border-r border-(--color-border) bg-(--color-surface) md:flex">
         <Brand orgName={orgName} orgLogoUrl={orgLogoUrl} />
-        <nav className="flex-1 space-y-1 px-3 py-4">{links}</nav>
+        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">{links}</nav>
         <div className="px-3 pb-1">
           <OnboardingTour />
         </div>
@@ -116,14 +116,15 @@ export function AppShell({
       {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Mobile top bar */}
-        <header className="flex items-center gap-3 border-b border-(--color-border) bg-(--color-surface) px-4 py-3 md:hidden">
+        <header className="flex shrink-0 items-center gap-3 border-b border-(--color-border) bg-(--color-surface) px-4 py-3 md:hidden">
           <button className="btn-ghost -ml-2" onClick={() => setOpen(true)} aria-label="Open menu">
             <Menu className="h-5 w-5" />
           </button>
           <span className="font-semibold">{orgName}</span>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">
+        {/* The only scrollable region — sidebar and header stay put */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="mx-auto w-full max-w-6xl">{children}</div>
         </main>
       </div>
