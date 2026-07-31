@@ -3,8 +3,9 @@ import { requireAuth, hasRole } from "@/lib/auth";
 import { listProducts } from "@/lib/queries";
 import { PageHeader, Badge, EmptyState } from "@/components/ui";
 import { CostTrendBadge } from "@/components/cost-trend";
+import { ProductSearch } from "./product-search";
 import { fmtQty } from "@/lib/utils";
-import { Plus, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 
 export default async function ProductsPage({
   searchParams,
@@ -49,16 +50,7 @@ export default async function ProductsPage({
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <form className="relative flex-1 min-w-[220px]">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--color-muted)" />
-          <input
-            name="search"
-            defaultValue={sp.search ?? ""}
-            placeholder="Search by name, code or category…"
-            className="input pl-9"
-          />
-          {onlyLow && <input type="hidden" name="filter" value="low" />}
-        </form>
+        <ProductSearch defaultValue={sp.search ?? ""} onlyLow={onlyLow} />
         <div className="flex gap-2">
           <Link
             href="/products"
