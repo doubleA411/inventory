@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { PasswordInput } from "@/components/password-input";
 import { signupAction, type SignupState } from "./actions";
 import { INDUSTRIES } from "@/lib/industries";
 
@@ -63,14 +64,12 @@ export function SignupForm() {
         <label className="label" htmlFor="password">
           Password
         </label>
-        <input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           autoComplete="new-password"
           required
           minLength={6}
-          className="input"
           placeholder="At least 6 characters"
         />
       </div>

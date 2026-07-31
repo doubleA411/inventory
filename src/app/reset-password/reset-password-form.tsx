@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import Link from "next/link";
+import { PasswordInput } from "@/components/password-input";
 import { resetPasswordAction, type ResetPasswordState } from "./actions";
 
 export function ResetPasswordForm({ token }: { token: string }) {
@@ -52,14 +53,12 @@ export function ResetPasswordForm({ token }: { token: string }) {
         <label className="label" htmlFor="password">
           New password
         </label>
-        <input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           autoComplete="new-password"
           required
           minLength={6}
-          className="input"
           placeholder="At least 6 characters"
         />
       </div>
@@ -67,14 +66,12 @@ export function ResetPasswordForm({ token }: { token: string }) {
         <label className="label" htmlFor="confirmPassword">
           Confirm new password
         </label>
-        <input
+        <PasswordInput
           id="confirmPassword"
           name="confirmPassword"
-          type="password"
           autoComplete="new-password"
           required
           minLength={6}
-          className="input"
         />
       </div>
       {state.error && (
