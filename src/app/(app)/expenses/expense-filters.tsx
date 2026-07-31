@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Search } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 
 type CategoryLite = { id: string; name: string };
@@ -33,6 +35,7 @@ export function ExpenseFilters({
   to,
   category,
   quotationId,
+  search,
 }: {
   categories: CategoryLite[];
   quotations: QuotationLite[];
@@ -40,18 +43,40 @@ export function ExpenseFilters({
   to: string;
   category?: string;
   quotationId?: string;
+  search?: string;
 }) {
   const router = useRouter();
+  const [searchValue, setSearchValue] = useState(search ?? "");
+  // The server already rendered results for `search` — don't re-fire the
+  // same navigation the moment this mounts.
+  const skipNext = useRef(true);
 
-  function navigate(next: { from?: string; to?: string; category?: string; quotationId?: string }) {
+  function navigate(next: {
+    from?: string;
+    to?: string;
+    category?: string;
+    quotationId?: string;
+    search?: string;
+  }) {
     const params = new URLSearchParams();
-    const merged = { from, to, category, quotationId, ...next };
+    const merged = { from, to, category, quotationId, search, ...next };
     if (merged.from) params.set("from", merged.from);
     if (merged.to) params.set("to", merged.to);
     if (merged.category) params.set("category", merged.category);
     if (merged.quotationId) params.set("quotationId", merged.quotationId);
+    if (merged.search) params.set("search", merged.search);
     router.push(`/expenses?${params.toString()}`);
   }
+
+  useEffect(() => {
+    if (skipNext.current) {
+      skipNext.current = false;
+      return;
+    }
+    const t = setTimeout(() => navigate({ search: searchValue || undefined }), 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchValue]);
 
   function applyPreset(preset: "today" | "week" | "month") {
     navigate(presetRange(preset));
@@ -109,6 +134,15 @@ export function ExpenseFilters({
         />
       </div>
       <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--color-muted)" />
+          <input
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
+            placeholder="Search description, notes, category or event…"
+            className="input pl-9"
+          />
+        </div>
         <select
           className="input w-auto"
           value={category ?? ""}

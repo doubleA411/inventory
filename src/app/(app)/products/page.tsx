@@ -3,7 +3,7 @@ import { requireAuth, hasRole } from "@/lib/auth";
 import { listProducts } from "@/lib/queries";
 import { PageHeader, Badge, EmptyState } from "@/components/ui";
 import { CostTrendBadge } from "@/components/cost-trend";
-import { ProductSearch } from "./product-search";
+import { SearchBox } from "@/components/search-box";
 import { fmtQty } from "@/lib/utils";
 import { Plus } from "lucide-react";
 
@@ -50,7 +50,12 @@ export default async function ProductsPage({
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <ProductSearch defaultValue={sp.search ?? ""} onlyLow={onlyLow} />
+        <SearchBox
+          basePath="/products"
+          defaultValue={sp.search ?? ""}
+          otherParams={{ filter: onlyLow ? "low" : undefined }}
+          placeholder="Search by name, code or category…"
+        />
         <div className="flex gap-2">
           <Link
             href="/products"

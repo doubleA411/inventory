@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { listInvoices, billingSummary, displayInvoiceStatus } from "@/lib/billing-queries";
 import { PageHeader, StatCard, Badge, EmptyState, DateFilter } from "@/components/ui";
+import { SearchBox } from "@/components/search-box";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { INVOICE_STATUS_META } from "@/lib/labels";
 import { Plus } from "lucide-react";
@@ -9,12 +10,12 @@ import { Plus } from "lucide-react";
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; search?: string }>;
 }) {
   const { organization } = await requireRole("admin");
   const sp = await searchParams;
   const [rows, summary] = await Promise.all([
-    listInvoices(organization.id, { from: sp.from, to: sp.to }),
+    listInvoices(organization.id, { from: sp.from, to: sp.to, search: sp.search }),
     billingSummary(organization.id),
   ]);
   const cur = organization.currency;
@@ -48,10 +49,19 @@ export default async function InvoicesPage({
 
       <DateFilter basePath="/invoices" from={sp.from} to={sp.to} />
 
+      <div className="mb-4">
+        <SearchBox
+          basePath="/invoices"
+          defaultValue={sp.search ?? ""}
+          otherParams={{ from: sp.from, to: sp.to }}
+          placeholder="Search by number or customer…"
+        />
+      </div>
+
       {rows.length === 0 ? (
         <EmptyState
-          title="No invoices yet"
-          description="Create your first GST invoice or bill."
+          title={sp.search ? "No matching invoices" : "No invoices yet"}
+          description={sp.search ? "Try a different search." : "Create your first GST invoice or bill."}
           action={
             <Link href="/invoices/new" className="btn-primary">
               New invoice

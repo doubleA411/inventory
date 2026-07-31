@@ -145,6 +145,7 @@ export type LedgerFilters = {
   /** undefined = all categories, "stock" = usage/waste only, else an expense_categories.id */
   category?: string;
   quotationId?: string;
+  search?: string;
 };
 
 export async function getExpenseLedger(
@@ -264,7 +265,17 @@ export async function getExpenseLedger(
   }
 
   rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  return rows;
+
+  if (!filters.search) return rows;
+  const q = filters.search.toLowerCase();
+  return rows.filter(
+    (r) =>
+      r.description.toLowerCase().includes(q) ||
+      r.category.toLowerCase().includes(q) ||
+      (r.notes ?? "").toLowerCase().includes(q) ||
+      (r.quotationNumber ?? "").toLowerCase().includes(q) ||
+      (r.customerName ?? "").toLowerCase().includes(q),
+  );
 }
 
 export type LedgerDay = { date: string; items: LedgerRow[]; total: number };

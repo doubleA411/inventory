@@ -22,6 +22,7 @@ export default async function ExpensesPage({
     to?: string;
     category?: string;
     quotationId?: string;
+    search?: string;
   }>;
 }) {
   const { organization } = await requireRole("admin");
@@ -38,6 +39,7 @@ export default async function ExpensesPage({
       to,
       category: sp.category,
       quotationId: sp.quotationId,
+      search: sp.search,
     }),
   ]);
 
@@ -60,6 +62,7 @@ export default async function ExpensesPage({
         to={to}
         category={sp.category}
         quotationId={sp.quotationId}
+        search={sp.search}
       />
 
       <div className="mb-4 grid grid-cols-3 gap-3">

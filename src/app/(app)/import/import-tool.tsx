@@ -44,7 +44,13 @@ function guessColumn(header: string[], guesses: string[]): string | "" {
   return "";
 }
 
-export function ImportTool({ units }: { units: { symbol: string; name: string }[] }) {
+export function ImportTool({
+  units,
+  existingNames,
+}: {
+  units: { symbol: string; name: string }[];
+  existingNames: string[];
+}) {
   const router = useRouter();
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
@@ -61,6 +67,11 @@ export function ImportTool({ units }: { units: { symbol: string; name: string }[
     });
     return s;
   }, [units]);
+
+  const knownProductNames = useMemo(
+    () => new Set(existingNames.map((n) => n.toLowerCase())),
+    [existingNames],
+  );
 
   async function onFile(file: File) {
     setResult(null);
@@ -106,16 +117,34 @@ export function ImportTool({ units }: { units: { symbol: string; name: string }[
     });
   }, [rows, mapping]);
 
+  // How many times each name appears in this file — so every row sharing a
+  // name gets flagged, not just the second-and-later occurrences.
+  const nameCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of normalized) {
+      const key = (r.name ?? "").trim().toLowerCase();
+      if (!key) continue;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [normalized]);
+
   const rowIssues = useMemo(() => {
     return normalized.map((r) => {
       const issues: string[] = [];
-      if (!r.name) issues.push("no name");
+      if (!r.name) {
+        issues.push("no name");
+      } else {
+        const key = r.name.trim().toLowerCase();
+        if (knownProductNames.has(key)) issues.push("already in your product list");
+        else if ((nameCounts.get(key) ?? 0) > 1) issues.push("duplicate name in this file");
+      }
       const u = String(r.unit ?? "").toLowerCase();
       if (!u) issues.push("no unit");
       else if (!knownUnits.has(u)) issues.push(`unknown unit "${r.unit}"`);
       return issues;
     });
-  }, [normalized, knownUnits]);
+  }, [normalized, knownUnits, knownProductNames, nameCounts]);
 
   const validCount = rowIssues.filter((i) => i.length === 0).length;
 

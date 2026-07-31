@@ -30,12 +30,12 @@ export async function getCustomer(orgId: string, id: string) {
 
 export async function listQuotations(
   orgId: string,
-  opts?: { from?: string; to?: string },
+  opts?: { from?: string; to?: string; search?: string },
 ) {
   const conds = [eq(quotations.organizationId, orgId)];
   if (opts?.from) conds.push(gte(quotations.issueDate, opts.from));
   if (opts?.to) conds.push(lte(quotations.issueDate, opts.to));
-  return db
+  const rows = await db
     .select({
       id: quotations.id,
       number: quotations.number,
@@ -50,6 +50,14 @@ export async function listQuotations(
     .leftJoin(customers, eq(quotations.customerId, customers.id))
     .where(and(...conds))
     .orderBy(desc(quotations.createdAt));
+
+  if (!opts?.search) return rows;
+  const q = opts.search.toLowerCase();
+  return rows.filter(
+    (r) =>
+      r.number.toLowerCase().includes(q) ||
+      (r.customerName ?? "").toLowerCase().includes(q),
+  );
 }
 
 /**
@@ -100,12 +108,12 @@ export async function getQuotationFull(orgId: string, id: string) {
 
 export async function listInvoices(
   orgId: string,
-  opts?: { from?: string; to?: string },
+  opts?: { from?: string; to?: string; search?: string },
 ) {
   const conds = [eq(invoices.organizationId, orgId)];
   if (opts?.from) conds.push(gte(invoices.issueDate, opts.from));
   if (opts?.to) conds.push(lte(invoices.issueDate, opts.to));
-  return db
+  const rows = await db
     .select({
       id: invoices.id,
       number: invoices.number,
@@ -122,6 +130,14 @@ export async function listInvoices(
     .leftJoin(customers, eq(invoices.customerId, customers.id))
     .where(and(...conds))
     .orderBy(desc(invoices.createdAt));
+
+  if (!opts?.search) return rows;
+  const q = opts.search.toLowerCase();
+  return rows.filter(
+    (r) =>
+      r.number.toLowerCase().includes(q) ||
+      (r.customerName ?? "").toLowerCase().includes(q),
+  );
 }
 
 export async function getInvoiceFull(orgId: string, id: string) {

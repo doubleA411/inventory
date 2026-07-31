@@ -91,8 +91,21 @@ export async function importProducts(
     catByName.set(catName.toLowerCase(), c);
   }
 
+  // Existing products in this org, by lowercased name — catches a re-upload
+  // (or a typo'd re-entry) of something already in the catalog.
+  const existingProducts = await db
+    .select({ name: products.name })
+    .from(products)
+    .where(eq(products.organizationId, orgId));
+  const existingNames = new Set(existingProducts.map((p) => p.name.toLowerCase()));
+
   const errors: ImportResult["errors"] = [];
   let inserted = 0;
+
+  // Names claimed by rows already processed in this same file — checked and
+  // set synchronously (no await in between) so concurrent workers can't both
+  // pass the check for the same name.
+  const seenInFile = new Set<string>();
 
   await mapWithConcurrency(rows, IMPORT_CONCURRENCY, async (r, i) => {
     const rowNum = i + 1;
@@ -101,6 +114,17 @@ export async function importProducts(
       errors.push({ row: rowNum, message: "Missing product name" });
       return;
     }
+    const nameKey = name.toLowerCase();
+    if (existingNames.has(nameKey)) {
+      errors.push({ row: rowNum, message: `"${name}" already exists in your product list` });
+      return;
+    }
+    if (seenInFile.has(nameKey)) {
+      errors.push({ row: rowNum, message: `Duplicate "${name}" elsewhere in this file` });
+      return;
+    }
+    seenInFile.add(nameKey);
+
     const unitKey = (r.unit ?? "").toString().trim().toLowerCase();
     const unit = unitBySymbol.get(unitKey) ?? unitByName.get(unitKey);
     if (!unit) {

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { listQuotations } from "@/lib/billing-queries";
 import { PageHeader, Badge, EmptyState, DateFilter } from "@/components/ui";
+import { SearchBox } from "@/components/search-box";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { QUOTE_STATUS_META } from "@/lib/labels";
 import { Plus } from "lucide-react";
@@ -9,11 +10,15 @@ import { Plus } from "lucide-react";
 export default async function QuotationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; search?: string }>;
 }) {
   const { organization } = await requireRole("admin");
   const sp = await searchParams;
-  const rows = await listQuotations(organization.id, { from: sp.from, to: sp.to });
+  const rows = await listQuotations(organization.id, {
+    from: sp.from,
+    to: sp.to,
+    search: sp.search,
+  });
   const cur = organization.currency;
 
   return (
@@ -30,10 +35,21 @@ export default async function QuotationsPage({
 
       <DateFilter basePath="/quotations" from={sp.from} to={sp.to} />
 
+      <div className="mb-4">
+        <SearchBox
+          basePath="/quotations"
+          defaultValue={sp.search ?? ""}
+          otherParams={{ from: sp.from, to: sp.to }}
+          placeholder="Search by number or customer…"
+        />
+      </div>
+
       {rows.length === 0 ? (
         <EmptyState
-          title="No quotations yet"
-          description="Send your first tariff / quotation to a customer."
+          title={sp.search ? "No matching quotations" : "No quotations yet"}
+          description={
+            sp.search ? "Try a different search." : "Send your first tariff / quotation to a customer."
+          }
           action={
             <Link href="/quotations/new" className="btn-primary">
               New quotation

@@ -4,12 +4,22 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 
-export function ProductSearch({
+/**
+ * Debounced, URL-driven search box. Writes to the `search` query param 300ms
+ * after the user stops typing (via router.replace, so it doesn't spam
+ * history). `otherParams` carries any other filters already on the page
+ * (date range, category, ...) so they survive the navigation unchanged.
+ */
+export function SearchBox({
+  basePath,
   defaultValue,
-  onlyLow,
+  otherParams,
+  placeholder = "Search…",
 }: {
+  basePath: string;
   defaultValue: string;
-  onlyLow: boolean;
+  otherParams?: Record<string, string | undefined>;
+  placeholder?: string;
 }) {
   const router = useRouter();
   const [value, setValue] = useState(defaultValue);
@@ -24,14 +34,17 @@ export function ProductSearch({
     }
     const t = setTimeout(() => {
       const params = new URLSearchParams();
+      for (const [k, v] of Object.entries(otherParams ?? {})) {
+        if (v) params.set(k, v);
+      }
       if (value.trim()) params.set("search", value.trim());
-      if (onlyLow) params.set("filter", "low");
-      router.replace(`/products${params.toString() ? `?${params}` : ""}`, {
+      router.replace(`${basePath}${params.toString() ? `?${params}` : ""}`, {
         scroll: false,
       });
     }, 300);
     return () => clearTimeout(t);
-  }, [value, onlyLow, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
 
   return (
     <div className="relative min-w-[220px] flex-1">
@@ -39,7 +52,7 @@ export function ProductSearch({
       <input
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="Search by name, code or category…"
+        placeholder={placeholder}
         className="input pl-9"
       />
     </div>
