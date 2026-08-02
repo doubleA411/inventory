@@ -30,6 +30,8 @@ const SAMPLE_ORG_BASE = {
   letterheadUrl: null,
   letterheadMarginTop: "0",
   letterheadMarginBottom: "0",
+  customerBlockTop: "40",
+  docTitleTop: "40",
   signatureUrl: null,
   bankName: null,
   bankAccount: null,

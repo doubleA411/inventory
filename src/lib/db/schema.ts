@@ -61,6 +61,13 @@ export const organizations = pgTable("organizations", {
   // Content-safe margins (px on an A4 page) so text clears the letterhead art.
   letterheadMarginTop: numeric("letterhead_margin_top").notNull().default("170"),
   letterheadMarginBottom: numeric("letterhead_margin_bottom").notNull().default("120"),
+  // Menu-page customer/venue block sits closer to the true top of the page
+  // than letterheadMarginTop — beside the logo rather than below it — so it
+  // needs its own, independently configurable offset (px).
+  customerBlockTop: numeric("customer_block_top").notNull().default("40"),
+  // Same idea for the invoice title/meta + seller-details block, which also
+  // sits beside the logo rather than below it.
+  docTitleTop: numeric("doc_title_top").notNull().default("40"),
   signatureUrl: text("signature_url"),
   // Printed document text appearance
   docHeadingColor: text("doc_heading_color").notNull().default("#1f2937"),

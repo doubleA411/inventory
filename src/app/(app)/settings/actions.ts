@@ -120,6 +120,8 @@ export async function updateSettingsAction(
 export async function saveLetterheadMargins(
   top: number,
   bottom: number,
+  customerTop: number,
+  docTitleTop: number,
 ): Promise<ActionState> {
   const { organization } = await requireRole("admin");
   const clamp = (n: number) => Math.max(0, Math.min(700, Math.round(n)));
@@ -128,6 +130,8 @@ export async function saveLetterheadMargins(
     .set({
       letterheadMarginTop: String(clamp(top)),
       letterheadMarginBottom: String(clamp(bottom)),
+      customerBlockTop: String(clamp(customerTop)),
+      docTitleTop: String(clamp(docTitleTop)),
     })
     .where(eq(organizations.id, organization.id));
   revalidatePath("/settings");

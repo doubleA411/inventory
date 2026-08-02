@@ -1,0 +1,1 @@
+ALTER TABLE "organizations" ADD COLUMN "doc_title_top" numeric DEFAULT '40' NOT NULL;

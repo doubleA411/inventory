@@ -106,6 +106,20 @@
       "when": 1785667396555,
       "tag": "0014_add_venue_to_quotations_invoices",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1785671252112,
+      "tag": "0015_add_customer_block_top",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785672081569,
+      "tag": "0016_add_doc_title_top",
+      "breakpoints": true
     }
   ]
 }

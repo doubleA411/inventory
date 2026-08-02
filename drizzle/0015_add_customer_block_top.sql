@@ -1,0 +1,1 @@
+ALTER TABLE "organizations" ADD COLUMN "customer_block_top" numeric DEFAULT '40' NOT NULL;

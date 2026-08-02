@@ -71,6 +71,8 @@ export default async function SettingsPage() {
                 letterheadUrl={o.letterheadUrl}
                 initialTop={Number(o.letterheadMarginTop)}
                 initialBottom={Number(o.letterheadMarginBottom)}
+                initialCustomerTop={Number(o.customerBlockTop)}
+                initialDocTitleTop={Number(o.docTitleTop)}
               />
             </div>
           )}

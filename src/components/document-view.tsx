@@ -20,6 +20,8 @@ export type DocOrg = {
   letterheadUrl: string | null;
   letterheadMarginTop: string;
   letterheadMarginBottom: string;
+  customerBlockTop: string;
+  docTitleTop: string;
   signatureUrl: string | null;
   bankName: string | null;
   bankAccount: string | null;
@@ -262,6 +264,8 @@ export function orgToDocOrg(o: Organization): DocOrg {
     letterheadUrl: o.letterheadUrl,
     letterheadMarginTop: o.letterheadMarginTop,
     letterheadMarginBottom: o.letterheadMarginBottom,
+    customerBlockTop: o.customerBlockTop,
+    docTitleTop: o.docTitleTop,
     signatureUrl: o.signatureUrl,
     bankName: o.bankName,
     bankAccount: o.bankAccount,
@@ -309,6 +313,99 @@ export function DocumentView({
   const headingStyle = { color: org.headingColor };
   const bodyStyle = { color: org.bodyColor };
 
+  // On a real uploaded letterhead, the logo sits in its own band at the top
+  // with blank space beside it (not below it) — the customer/venue block
+  // belongs there, at its own configurable offset, not pushed down by
+  // letterheadMarginTop along with the rest of the content (which does need
+  // to clear the full header). Falls back to normal flow under DocHeader
+  // when there's no letterhead image to sit beside.
+  const customerBlockContent = customer ? (
+    <>
+      <div className="font-semibold" style={headingStyle}>
+        {customer.name}
+      </div>
+      {(customer.location || customer.district) && (
+        <div className="doc-text-xs" style={bodyStyle}>
+          {[customer.location, customer.district].filter(Boolean).join(", ")}
+        </div>
+      )}
+      {doc.venue && (
+        <div className="doc-text-xs" style={bodyStyle}>Venue: {doc.venue}</div>
+      )}
+    </>
+  ) : null;
+
+  // Title + document meta (No./Date/…). On a real letterhead the logo
+  // occupies the whole top-right band, so only the short, left-aligned
+  // title can safely sit up beside it (like the customer name on the menu
+  // page) — the meta table is right-aligned and would run straight under
+  // the logo, so it stays in normal flow either way, just like the real
+  // reference letterhead only elevates the name, not the date.
+  const titleOnly = (
+    <h1 className="doc-text-xl font-bold tracking-wide" style={headingStyle}>
+      {doc.title}
+    </h1>
+  );
+  const metaTable = (
+    <table className="doc-text-xs">
+      <tbody>
+        <tr>
+          <td className="pr-3" style={bodyStyle}>No.</td>
+          <td className="font-semibold">{doc.number}</td>
+        </tr>
+        <tr>
+          <td className="pr-3" style={bodyStyle}>Date</td>
+          <td>{fmtDate(doc.issueDate)}</td>
+        </tr>
+        {doc.secondDate && (
+          <tr>
+            <td className="pr-3" style={bodyStyle}>{doc.secondDateLabel}</td>
+            <td>{fmtDate(doc.secondDate)}</td>
+          </tr>
+        )}
+        {doc.kind === "invoice" && (
+          <tr>
+            <td className="pr-3" style={bodyStyle}>Place of supply</td>
+            <td>{stateNameByCode(doc.placeOfSupplyStateCode) ?? "—"}</td>
+          </tr>
+        )}
+        {doc.kind === "invoice" && (
+          <tr>
+            <td className="pr-3" style={bodyStyle}>Reverse charge</td>
+            <td>{doc.reverseCharge ? "Yes" : "No"}</td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  );
+  // Combined row — used as-is when there's no letterhead image to collide
+  // with (DocHeader is a single simple row there, nothing to avoid).
+  const titleBlockContent = (
+    <div className="mb-2 flex items-start justify-between">
+      {titleOnly}
+      {metaTable}
+    </div>
+  );
+
+  // Seller (caterer) details printed under the title — invoices only, and
+  // only when using a real letterhead: when there's no letterhead image,
+  // DocHeader already prints this same information beside the logo.
+  const catererBlockContent =
+    doc.kind === "invoice" && useLetterheadBg ? (
+      <div className="doc-text-xs">
+        <div className="font-semibold doc-text-sm">{org.legalName || org.name}</div>
+        <div style={bodyStyle}>
+          {[org.addressLine, org.city, stateNameByCode(org.stateCode), org.pincode]
+            .filter(Boolean)
+            .join(", ")}
+        </div>
+        {(org.phone || org.email) && (
+          <div style={bodyStyle}>{[org.phone, org.email].filter(Boolean).join(" · ")}</div>
+        )}
+        {doc.gstEnabled && org.gstin && <div>GSTIN: {org.gstin}</div>}
+      </div>
+    ) : null;
+
   return (
     <>
       {menuPages.map((pageItems, pageIdx) => (
@@ -317,37 +414,49 @@ export function DocumentView({
             // eslint-disable-next-line @next/next/no-img-element
             <img className="lh-img" src={org.letterheadUrl} alt="" />
           )}
+          {useLetterheadBg && customerBlockContent && (
+            <div
+              className="doc-text-sm"
+              style={{
+                ...contentStyle,
+                position: "absolute",
+                top: `${Number(org.customerBlockTop)}px`,
+                left: "14mm",
+                right: "14mm",
+                zIndex: 1,
+              }}
+            >
+              {customerBlockContent}
+            </div>
+          )}
           <div className="a4-content" style={contentStyle}>
             {showGeneratedHeader && <DocHeader org={org} />}
-            {customer && (
-              <div className="mb-4 doc-text-sm">
-                <div className="font-semibold" style={headingStyle}>
-                  {customer.name}
-                </div>
-                {(customer.location || customer.district) && (
-                  <div className="doc-text-xs" style={bodyStyle}>
-                    {[customer.location, customer.district].filter(Boolean).join(", ")}
-                  </div>
-                )}
-                {doc.venue && (
-                  <div className="doc-text-xs" style={bodyStyle}>Venue: {doc.venue}</div>
-                )}
-              </div>
+            {!useLetterheadBg && customerBlockContent && (
+              <div className="mb-4 doc-text-sm">{customerBlockContent}</div>
             )}
-            <h1 className="mb-4 doc-text-xl font-bold tracking-wide" style={headingStyle}>
-              Menu
-            </h1>
+            <div className="mb-4 flex items-end justify-between">
+              <h1 className="doc-text-xl font-bold tracking-wide" style={headingStyle}>
+                Menu
+              </h1>
+              {pageItems[0]?.eventDate && (
+                <div className="doc-text-sm font-semibold" style={bodyStyle}>
+                  {fmtDate(pageItems[0].eventDate)}
+                </div>
+              )}
+            </div>
             {pageItems.map((it, i) => {
               const date = it.eventDate ?? null;
               const prevDate = i > 0 ? pageItems[i - 1].eventDate ?? null : undefined;
-              const showDateHeading = date && (i === 0 || date !== prevDate);
+              // The first date is already shown next to "Menu" above — only
+              // print a heading here when the date changes further down a
+              // multi-day page.
+              const showDateHeading = date && i > 0 && date !== prevDate;
               return (
                 <div key={i} className="menu-session">
                   {showDateHeading && (
                     <div
-                      className={`mb-2 doc-text-sm font-semibold ${
-                        i > 0 ? "mt-4 border-t border-gray-300 pt-2" : ""
-                      }`}
+                      className="mb-2 mt-4 border-t border-gray-300 pt-2 text-right doc-text-sm font-semibold"
+                      style={bodyStyle}
                     >
                       {fmtDate(date)}
                     </div>
@@ -389,52 +498,37 @@ export function DocumentView({
         // eslint-disable-next-line @next/next/no-img-element
         <img className="lh-img" src={org.letterheadUrl} alt="" />
       )}
+      {page.isFirst && useLetterheadBg && (
+        <div
+          style={{
+            ...contentStyle,
+            position: "absolute",
+            top: `${Number(org.docTitleTop)}px`,
+            left: "14mm",
+            maxWidth: "45%",
+            zIndex: 1,
+          }}
+        >
+          <div className="mb-2">{titleOnly}</div>
+          {catererBlockContent}
+        </div>
+      )}
       <div className="a4-content" style={contentStyle}>
       {showGeneratedHeader && <DocHeader org={org} />}
 
       {page.isFirst && (
       <>
-      {/* Title + meta */}
-      <div className="mb-4 flex items-start justify-between">
-        <h1 className="doc-text-xl font-bold tracking-wide" style={headingStyle}>
-          {doc.title}
-        </h1>
-        <table className="doc-text-xs">
-          <tbody>
-            <tr>
-              <td className="pr-3" style={bodyStyle}>No.</td>
-              <td className="font-semibold">{doc.number}</td>
-            </tr>
-            <tr>
-              <td className="pr-3" style={bodyStyle}>Date</td>
-              <td>{fmtDate(doc.issueDate)}</td>
-            </tr>
-            {doc.secondDate && (
-              <tr>
-                <td className="pr-3" style={bodyStyle}>{doc.secondDateLabel}</td>
-                <td>{fmtDate(doc.secondDate)}</td>
-              </tr>
-            )}
-            {doc.kind === "invoice" && (
-              <tr>
-                <td className="pr-3" style={bodyStyle}>Place of supply</td>
-                <td>{stateNameByCode(doc.placeOfSupplyStateCode) ?? "—"}</td>
-              </tr>
-            )}
-            {doc.kind === "invoice" && (
-              <tr>
-                <td className="pr-3" style={bodyStyle}>Reverse charge</td>
-                <td>{doc.reverseCharge ? "Yes" : "No"}</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {!useLetterheadBg && titleBlockContent}
+      {/* The meta table stays in normal flow even with a letterhead — it's
+          right-aligned and would otherwise run under the logo. */}
+      {useLetterheadBg && <div className="mb-4 flex justify-end">{metaTable}</div>}
 
-      {/* Bill to */}
+      {/* Buyer — invoices only; a quotation isn't a legal billing document,
+          and the customer/venue block on the menu page already covers it. */}
+      {doc.kind === "invoice" && (
       <div className="mb-4">
         <div className="doc-text-xs font-semibold uppercase" style={bodyStyle}>
-          Bill To
+          Buyer
         </div>
         {customer ? (
           <div className="doc-text-sm">
@@ -453,6 +547,7 @@ export function DocumentView({
           </div>
         )}
       </div>
+      )}
       </>
       )}
 
