@@ -40,6 +40,10 @@ export const INDIA_STATES: { code: string; name: string }[] = [
   { code: "97", name: "Other Territory" },
 ];
 
+// Every customer is in Tamil Nadu — the state picker is gone from customer
+// forms, so new/edited customers are saved with this code automatically.
+export const TAMIL_NADU_CODE = "33";
+
 export function stateNameByCode(code?: string | null): string | null {
   if (!code) return null;
   return INDIA_STATES.find((s) => s.code === code)?.name ?? null;

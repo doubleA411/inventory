@@ -37,6 +37,7 @@ export default async function EditInvoicePage({
           customerId: invoice.customerId,
           issueDate: invoice.issueDate,
           secondDate: invoice.dueDate,
+          venue: invoice.venue,
           notes: invoice.notes,
           terms: invoice.terms,
           applyGst: invoice.docType === "tax_invoice",

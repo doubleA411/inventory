@@ -35,7 +35,8 @@ export type DocCustomer = {
   name: string;
   gstin: string | null;
   addressLine: string | null;
-  city: string | null;
+  district: string;
+  location: string | null;
   stateCode: string | null;
   pincode: string | null;
   phone: string | null;
@@ -54,6 +55,13 @@ export type DocItem = {
   eventDate?: string | null; // function date this line's menu items belong to
 };
 
+export type DocPayment = {
+  amount: string;
+  method: string;
+  reference: string | null;
+  paidAt: string;
+};
+
 export type DocData = {
   kind: "quote" | "invoice";
   title: string; // QUOTATION / TAX INVOICE / BILL OF SUPPLY
@@ -62,6 +70,7 @@ export type DocData = {
   secondDateLabel: string;
   secondDate: string | null;
   placeOfSupplyStateCode: string | null;
+  venue?: string | null;
   reverseCharge?: boolean;
   gstEnabled: boolean;
   intraState: boolean;
@@ -72,6 +81,8 @@ export type DocData = {
   igst?: string;
   roundOff?: string;
   total: string;
+  amountPaid?: string; // invoice only
+  payments?: DocPayment[]; // invoice only
   notes: string | null;
   terms: string | null;
 };
@@ -105,6 +116,100 @@ function chunkMenuLines(items: DocItem[]): DocItem[][] {
     prevDate = date;
   }
   if (current.length > 0) pages.push(current);
+  return pages;
+}
+
+// Same line-budget idea as chunkMenuLines, applied to the priced document
+// itself: item rows, the totals block, payment rows and the closing
+// tail (in-words / bank / terms / signature) are packed onto as few pages
+// as fit, instead of assuming everything always fits on one A4 sheet — a
+// long payment history (many small part-payments) can easily overflow a
+// single page, and an unpaginated page loses its letterhead past the point
+// where the background image's fixed height ends.
+const PRICED_PAGE_BUDGET = 40;
+const PRICED_HEADER_RESERVE = 13; // title/meta table + Bill To/Buyer block, page 1 only
+const PRICED_TABLE_HEADER_LINES = 1; // re-printed whenever a table continues onto a new page
+const PRICED_TOTALS_LINES = 6;
+const PRICED_PAYMENTS_SUMMARY_LINES = 3; // Amount paid + Balance due
+const PRICED_TAIL_LINES = 11; // in-words + bank details + terms/notes + signature
+
+type PricedPageSpec = {
+  isFirst: boolean;
+  items: DocItem[];
+  showTotals: boolean;
+  payments: DocPayment[];
+  showPaymentsSummary: boolean;
+  showTail: boolean;
+};
+
+function layoutPricedPages(
+  items: DocItem[],
+  payments: DocPayment[],
+  includePayments: boolean,
+): PricedPageSpec[] {
+  const pages: PricedPageSpec[] = [];
+  let pageItems: DocItem[] = [];
+  let pagePayments: DocPayment[] = [];
+  let showTotals = false;
+  let showPaymentsSummary = false;
+  let showTail = false;
+  let used = PRICED_HEADER_RESERVE;
+  let itemsTableOpen = false;
+  let paymentsTableOpen = false;
+
+  function flush() {
+    pages.push({
+      isFirst: pages.length === 0,
+      items: pageItems,
+      showTotals,
+      payments: pagePayments,
+      showPaymentsSummary,
+      showTail,
+    });
+    pageItems = [];
+    pagePayments = [];
+    showTotals = false;
+    showPaymentsSummary = false;
+    showTail = false;
+    used = 0;
+    itemsTableOpen = false;
+    paymentsTableOpen = false;
+  }
+
+  for (const it of items) {
+    const cost = 1 + (itemsTableOpen ? 0 : PRICED_TABLE_HEADER_LINES);
+    if (used + cost > PRICED_PAGE_BUDGET) {
+      flush();
+    }
+    pageItems.push(it);
+    used += 1 + (itemsTableOpen ? 0 : PRICED_TABLE_HEADER_LINES);
+    itemsTableOpen = true;
+  }
+
+  if (used + PRICED_TOTALS_LINES > PRICED_PAGE_BUDGET) flush();
+  showTotals = true;
+  used += PRICED_TOTALS_LINES;
+  itemsTableOpen = false;
+
+  if (includePayments && payments.length > 0) {
+    for (const p of payments) {
+      const cost = 1 + (paymentsTableOpen ? 0 : PRICED_TABLE_HEADER_LINES);
+      if (used + cost > PRICED_PAGE_BUDGET) {
+        flush();
+      }
+      pagePayments.push(p);
+      used += 1 + (paymentsTableOpen ? 0 : PRICED_TABLE_HEADER_LINES);
+      paymentsTableOpen = true;
+    }
+    if (used + PRICED_PAYMENTS_SUMMARY_LINES > PRICED_PAGE_BUDGET) flush();
+    showPaymentsSummary = true;
+    used += PRICED_PAYMENTS_SUMMARY_LINES;
+  }
+
+  if (used + PRICED_TAIL_LINES > PRICED_PAGE_BUDGET) flush();
+  showTail = true;
+
+  flush();
   return pages;
 }
 
@@ -195,6 +300,11 @@ export function DocumentView({
 
   const menuLines = doc.items.filter((it) => it.menuItems?.length);
   const menuPages = chunkMenuLines(menuLines);
+  const pricedPages = layoutPricedPages(
+    doc.items,
+    doc.payments ?? [],
+    doc.kind === "invoice" && !!doc.payments?.length,
+  );
   const contentStyle = { "--doc-base": `${org.fontSize}px` } as React.CSSProperties;
   const headingStyle = { color: org.headingColor };
   const bodyStyle = { color: org.bodyColor };
@@ -209,6 +319,21 @@ export function DocumentView({
           )}
           <div className="a4-content" style={contentStyle}>
             {showGeneratedHeader && <DocHeader org={org} />}
+            {customer && (
+              <div className="mb-4 doc-text-sm">
+                <div className="font-semibold" style={headingStyle}>
+                  {customer.name}
+                </div>
+                {(customer.location || customer.district) && (
+                  <div className="doc-text-xs" style={bodyStyle}>
+                    {[customer.location, customer.district].filter(Boolean).join(", ")}
+                  </div>
+                )}
+                {doc.venue && (
+                  <div className="doc-text-xs" style={bodyStyle}>Venue: {doc.venue}</div>
+                )}
+              </div>
+            )}
             <h1 className="mb-4 doc-text-xl font-bold tracking-wide" style={headingStyle}>
               Menu
             </h1>
@@ -240,6 +365,13 @@ export function DocumentView({
                         <li key={j}>{m}</li>
                       ))}
                     </ol>
+                    <div
+                      className="mt-1 border-t border-dotted border-gray-300 pt-1 text-right doc-text-xs font-semibold"
+                      style={headingStyle}
+                    >
+                      {fmtMoney(it.rate, cur)}
+                      {it.unit ? ` / ${it.unit}` : ""}
+                    </div>
                   </div>
                 </div>
               );
@@ -247,7 +379,12 @@ export function DocumentView({
           </div>
         </div>
       ))}
-    <div className="a4-page" style={pageStyle}>
+    {pricedPages.map((page, pageIdx) => (
+    <div
+      key={pageIdx}
+      className={`a4-page${pageIdx < pricedPages.length - 1 ? " priced-page" : ""}`}
+      style={pageStyle}
+    >
       {useLetterheadBg && org.letterheadUrl && (
         // eslint-disable-next-line @next/next/no-img-element
         <img className="lh-img" src={org.letterheadUrl} alt="" />
@@ -255,6 +392,8 @@ export function DocumentView({
       <div className="a4-content" style={contentStyle}>
       {showGeneratedHeader && <DocHeader org={org} />}
 
+      {page.isFirst && (
+      <>
       {/* Title + meta */}
       <div className="mb-4 flex items-start justify-between">
         <h1 className="doc-text-xl font-bold tracking-wide" style={headingStyle}>
@@ -301,7 +440,7 @@ export function DocumentView({
           <div className="doc-text-sm">
             <div className="font-semibold">{customer.name}</div>
             <div className="doc-text-xs" style={bodyStyle}>
-              {[customer.addressLine, customer.city, stateNameByCode(customer.stateCode), customer.pincode]
+              {[customer.addressLine, customer.location, customer.district, stateNameByCode(customer.stateCode), customer.pincode]
                 .filter(Boolean)
                 .join(", ")}
             </div>
@@ -314,8 +453,11 @@ export function DocumentView({
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Items */}
+      {page.items.length > 0 && (
       <table className="w-full border-collapse doc-text-xs">
         <thead>
           <tr className="border-y border-gray-400 bg-gray-50 text-left">
@@ -329,9 +471,9 @@ export function DocumentView({
           </tr>
         </thead>
         <tbody>
-          {doc.items.map((it, i) => (
-            <tr key={i} className="border-b border-gray-200 align-top">
-              <td className="px-1.5 py-1.5">{i + 1}</td>
+          {page.items.map((it, i) => (
+            <tr key={i} className="doc-row border-b border-gray-200 align-top">
+              <td className="px-1.5 py-1.5">{doc.items.indexOf(it) + 1}</td>
               <td className="px-1.5 py-1.5">{it.description}</td>
               <td className="px-1.5 py-1.5">{it.hsnSac || "—"}</td>
               <td className="px-1.5 py-1.5 text-right">
@@ -348,9 +490,11 @@ export function DocumentView({
           ))}
         </tbody>
       </table>
+      )}
 
       {/* Totals */}
-      <div className="mt-3 flex justify-end">
+      {page.showTotals && (
+      <div className="mt-3 flex justify-end doc-noSplit">
         <table className="doc-text-xs">
           <tbody>
             <tr>
@@ -390,14 +534,56 @@ export function DocumentView({
           </tbody>
         </table>
       </div>
+      )}
 
+      {page.payments.length > 0 && (
+        <div className="mt-3 flex justify-end">
+          <table className="doc-text-xs" style={{ minWidth: "260px" }}>
+            <thead>
+              <tr className="border-b border-gray-400 text-left" style={bodyStyle}>
+                <th className="pr-4 py-1 font-semibold">Date</th>
+                <th className="pr-4 py-1 font-semibold">Method</th>
+                <th className="pr-4 py-1 font-semibold">Reference</th>
+                <th className="py-1 text-right font-semibold">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {page.payments.map((p, i) => (
+                <tr key={i} className="doc-row border-b border-gray-200">
+                  <td className="pr-4 py-1">{fmtDate(p.paidAt)}</td>
+                  <td className="pr-4 py-1 capitalize">{p.method.replace("_", " ")}</td>
+                  <td className="pr-4 py-1">{p.reference || "—"}</td>
+                  <td className="py-1 text-right">{fmtMoney(p.amount, cur)}</td>
+                </tr>
+              ))}
+            </tbody>
+            {page.showPaymentsSummary && (
+            <tfoot>
+              <tr>
+                <td colSpan={3} className="pr-6 pt-1 font-bold">Amount paid</td>
+                <td className="pt-1 text-right font-bold">{fmtMoney(doc.amountPaid ?? 0, cur)}</td>
+              </tr>
+              <tr>
+                <td colSpan={3} className="pr-6 font-bold">Balance due</td>
+                <td className="text-right font-bold">
+                  {fmtMoney(Number(doc.total) - Number(doc.amountPaid ?? 0), cur)}
+                </td>
+              </tr>
+            </tfoot>
+            )}
+          </table>
+        </div>
+      )}
+
+      {page.showTail && (
+      <>
       <div className="mt-2 doc-text-xs">
         <span style={bodyStyle}>In words: </span>
         <span className="font-medium">{amountInWords(Number(doc.total))}</span>
       </div>
 
       {/* Footer: bank, notes/terms, signature */}
-      <div className="mt-6 grid grid-cols-2 gap-6 doc-text-xs">
+      <div className="mt-6 grid grid-cols-2 gap-6 doc-text-xs doc-noSplit">
         <div className="space-y-2">
           {doc.kind === "invoice" && (org.bankName || org.bankUpi) && (
             <div>
@@ -435,8 +621,11 @@ export function DocumentView({
           <div className="mt-6 border-t border-gray-400 pt-1">Authorised Signatory</div>
         </div>
       </div>
+      </>
+      )}
       </div>
     </div>
+    ))}
     </>
   );
 }

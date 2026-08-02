@@ -18,7 +18,7 @@ export default async function SharedInvoicePage({
 
   const data = await getInvoiceFull(organization.id, found.invoice.id);
   if (!data) notFound();
-  const { invoice, items, customer } = data;
+  const { invoice, items, customer, payments } = data;
 
   const gstEnabled = invoice.docType === "tax_invoice";
   const intraState =
@@ -39,6 +39,7 @@ export default async function SharedInvoicePage({
             secondDateLabel: "Due date",
             secondDate: invoice.dueDate,
             placeOfSupplyStateCode: invoice.placeOfSupplyStateCode,
+            venue: invoice.venue,
             reverseCharge: invoice.reverseCharge,
             gstEnabled,
             intraState,
@@ -60,6 +61,13 @@ export default async function SharedInvoicePage({
             igst: invoice.igst,
             roundOff: invoice.roundOff,
             total: invoice.total,
+            amountPaid: invoice.amountPaid,
+            payments: payments.map((p) => ({
+              amount: p.amount,
+              method: p.method,
+              reference: p.reference,
+              paidAt: p.paidAt,
+            })),
             notes: invoice.notes,
             terms: invoice.terms,
           }}

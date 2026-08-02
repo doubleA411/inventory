@@ -15,8 +15,8 @@ export default async function CustomersPage() {
           id: c.id,
           name: c.name,
           gstin: c.gstin,
-          city: c.city,
-          stateCode: c.stateCode,
+          district: c.district,
+          location: c.location,
           phone: c.phone,
           email: c.email,
         }))}

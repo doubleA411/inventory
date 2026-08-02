@@ -13,7 +13,7 @@ export default async function InvoicePrintPage({
   const { id } = await params;
   const data = await getInvoiceFull(organization.id, id);
   if (!data) notFound();
-  const { invoice, items, customer } = data;
+  const { invoice, items, customer, payments } = data;
   // Approval gate: can't print until the owner approves.
   if (!invoice.approvedAt) redirect(`/invoices/${id}`);
 
@@ -37,6 +37,7 @@ export default async function InvoicePrintPage({
             secondDateLabel: "Due date",
             secondDate: invoice.dueDate,
             placeOfSupplyStateCode: invoice.placeOfSupplyStateCode,
+            venue: invoice.venue,
             reverseCharge: invoice.reverseCharge,
             gstEnabled,
             intraState,
@@ -58,6 +59,13 @@ export default async function InvoicePrintPage({
             igst: invoice.igst,
             roundOff: invoice.roundOff,
             total: invoice.total,
+            amountPaid: invoice.amountPaid,
+            payments: payments.map((p) => ({
+              amount: p.amount,
+              method: p.method,
+              reference: p.reference,
+              paidAt: p.paidAt,
+            })),
             notes: invoice.notes,
             terms: invoice.terms,
           }}

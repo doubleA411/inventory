@@ -376,8 +376,9 @@ export const customers = pgTable(
     name: text("name").notNull(),
     gstin: text("gstin"),
     addressLine: text("address_line"),
-    city: text("city"),
-    stateCode: text("state_code"), // GST state code — drives place of supply
+    district: text("district").notNull().default("Chennai"),
+    location: text("location"), // area/locality within the district
+    stateCode: text("state_code"), // GST state code — drives place of supply; always Tamil Nadu, not user-editable
     pincode: text("pincode"),
     phone: text("phone"),
     email: text("email"),
@@ -403,6 +404,8 @@ export const quotations = pgTable(
     status: quoteStatusEnum("status").notNull().default("draft"),
     issueDate: date("issue_date").notNull().defaultNow(),
     validUntil: date("valid_until"),
+    // Mandapam / event venue — specific to this booking, not the customer.
+    venue: text("venue"),
     placeOfSupplyStateCode: text("place_of_supply_state_code"),
     // Totals (stored in the org currency)
     subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull().default("0"),
@@ -466,6 +469,8 @@ export const invoices = pgTable(
     status: invoiceStatusEnum("status").notNull().default("draft"),
     issueDate: date("issue_date").notNull().defaultNow(),
     dueDate: date("due_date"),
+    // Mandapam / event venue — carried over from the quotation on conversion.
+    venue: text("venue"),
     placeOfSupplyStateCode: text("place_of_supply_state_code"),
     reverseCharge: boolean("reverse_charge").notNull().default(false),
     // Totals

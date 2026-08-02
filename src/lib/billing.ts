@@ -35,6 +35,7 @@ export const invoiceSchema = z.object({
   quotationId: z.string().uuid().nullable().optional(),
   issueDate: z.string().min(1),
   dueDate: z.string().optional().nullable(),
+  venue: z.string().trim().optional().nullable(),
   reverseCharge: z.boolean().optional(),
   // Per-invoice override of the org's GST default — off issues a bill of
   // supply instead of a tax invoice. Ignored if the org isn't registered.
@@ -50,6 +51,7 @@ export const quoteSchema = z.object({
   customerId: z.string().uuid().nullable().optional(),
   issueDate: z.string().min(1),
   validUntil: z.string().optional().nullable(),
+  venue: z.string().trim().optional().nullable(),
   notes: z.string().trim().optional().nullable(),
   terms: z.string().trim().optional().nullable(),
   items: z.array(itemSchema),
@@ -124,6 +126,7 @@ export async function saveInvoiceCore(
             customerId: d.customerId ?? null,
             issueDate: d.issueDate,
             dueDate: d.dueDate || null,
+            venue: d.venue || null,
             reverseCharge: d.reverseCharge ?? false,
             placeOfSupplyStateCode: placeCode,
             docType,
@@ -163,6 +166,7 @@ export async function saveInvoiceCore(
             quotationId: d.quotationId ?? null,
             issueDate: d.issueDate,
             dueDate: d.dueDate || null,
+            venue: d.venue || null,
             reverseCharge: d.reverseCharge ?? false,
             placeOfSupplyStateCode: placeCode,
             subtotal: String(totals.subtotal),
@@ -327,6 +331,7 @@ export async function saveQuotationCore(
         customerId: d.customerId ?? null,
         issueDate: d.issueDate,
         validUntil: d.validUntil || null,
+        venue: d.venue || null,
         placeOfSupplyStateCode: placeCode,
         subtotal: String(totals.subtotal),
         taxTotal: String(totals.taxTotal),
@@ -451,6 +456,7 @@ export async function convertToInvoiceCore(
     customerId: q.customerId,
     quotationId: q.id,
     issueDate: new Date().toISOString().slice(0, 10),
+    venue: q.venue,
     notes: q.notes,
     terms: q.terms,
     items: items.map((i) => ({

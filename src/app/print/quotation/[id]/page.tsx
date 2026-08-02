@@ -39,6 +39,7 @@ export default async function QuotationPrintPage({
             secondDateLabel: "Valid until",
             secondDate: quotation.validUntil,
             placeOfSupplyStateCode: quotation.placeOfSupplyStateCode,
+            venue: quotation.venue,
             gstEnabled,
             intraState,
             items: items.map((i) => ({

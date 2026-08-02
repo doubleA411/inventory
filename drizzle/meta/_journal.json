@@ -92,6 +92,20 @@
       "when": 1785344048465,
       "tag": "0012_mixed_famine",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785667135104,
+      "tag": "0013_add_customer_district_location",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785667396555,
+      "tag": "0014_add_venue_to_quotations_invoices",
+      "breakpoints": true
     }
   ]
 }

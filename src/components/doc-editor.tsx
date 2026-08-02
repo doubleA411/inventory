@@ -6,8 +6,8 @@ import Link from "next/link";
 import { ChevronDown, ChevronRight, ListPlus, Plus, Trash2, UserPlus } from "lucide-react";
 import { computeTotals } from "@/lib/tax";
 import { fmtMoney } from "@/lib/utils";
-import { INDIA_STATES } from "@/lib/india-states";
 import { saveCustomer } from "@/app/(app)/customers/actions";
+import { TAMIL_NADU_CODE } from "@/lib/india-states";
 
 type CustomerLite = { id: string; name: string; stateCode: string | null };
 type ItemRow = {
@@ -27,6 +27,7 @@ export type DocEditorInitial = {
   customerId?: string | null;
   issueDate?: string;
   secondDate?: string | null; // validUntil (quote) or dueDate (invoice)
+  venue?: string | null;
   notes?: string | null;
   terms?: string | null;
   applyGst?: boolean; // invoice only
@@ -92,6 +93,7 @@ export function DocEditor({
   const [customerId, setCustomerId] = useState(initial?.customerId ?? "");
   const [issueDate, setIssueDate] = useState(initial?.issueDate ?? today());
   const [secondDate, setSecondDate] = useState(initial?.secondDate ?? "");
+  const [venue, setVenue] = useState(initial?.venue ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [terms, setTerms] = useState(initial?.terms ?? defaultTerms ?? "");
   const [rows, setRows] = useState<ItemRow[]>(
@@ -124,7 +126,7 @@ export function DocEditor({
 
   // Inline new-customer form.
   const [showNewCust, setShowNewCust] = useState(false);
-  const [nc, setNc] = useState({ name: "", gstin: "", stateCode: "", phone: "" });
+  const [nc, setNc] = useState({ name: "", gstin: "", district: "Chennai", location: "", phone: "" });
   const [custList, setCustList] = useState(customers);
 
   const selectedCust = custList.find((c) => c.id === customerId);
@@ -163,15 +165,16 @@ export function DocEditor({
     const res = await saveCustomer({
       name: nc.name,
       gstin: nc.gstin || null,
-      stateCode: nc.stateCode || null,
+      district: nc.district || "Chennai",
+      location: nc.location || null,
       phone: nc.phone || null,
     });
     if (res.ok && res.id) {
-      const added = { id: res.id, name: nc.name, stateCode: nc.stateCode || null };
+      const added = { id: res.id, name: nc.name, stateCode: TAMIL_NADU_CODE };
       setCustList((l) => [...l, added].sort((a, b) => a.name.localeCompare(b.name)));
       setCustomerId(res.id);
       setShowNewCust(false);
-      setNc({ name: "", gstin: "", stateCode: "", phone: "" });
+      setNc({ name: "", gstin: "", district: "Chennai", location: "", phone: "" });
     } else {
       setError(res.error ?? "Could not add customer");
     }
@@ -186,6 +189,7 @@ export function DocEditor({
             customerId: customerId || null,
             issueDate,
             dueDate: secondDate || null,
+            venue: venue || null,
             notes,
             terms,
             applyGst: gstEnabled ? applyGst : undefined,
@@ -205,6 +209,7 @@ export function DocEditor({
             customerId: customerId || null,
             issueDate,
             validUntil: secondDate || null,
+            venue: venue || null,
             notes,
             terms,
             items: rows.map((r) => ({
@@ -281,6 +286,15 @@ export function DocEditor({
               onChange={(e) => setSecondDate(e.target.value)}
             />
           </div>
+          <div className="sm:col-span-3">
+            <label className="label">Venue</label>
+            <input
+              className="input"
+              placeholder="Mandapam / event venue"
+              value={venue}
+              onChange={(e) => setVenue(e.target.value)}
+            />
+          </div>
         </div>
 
         {showNewCust && (
@@ -297,18 +311,18 @@ export function DocEditor({
               value={nc.gstin}
               onChange={(e) => setNc({ ...nc, gstin: e.target.value })}
             />
-            <select
+            <input
               className="input"
-              value={nc.stateCode}
-              onChange={(e) => setNc({ ...nc, stateCode: e.target.value })}
-            >
-              <option value="">State (place of supply)</option>
-              {INDIA_STATES.map((s) => (
-                <option key={s.code} value={s.code}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+              placeholder="District"
+              value={nc.district}
+              onChange={(e) => setNc({ ...nc, district: e.target.value })}
+            />
+            <input
+              className="input"
+              placeholder="Location (area)"
+              value={nc.location}
+              onChange={(e) => setNc({ ...nc, location: e.target.value })}
+            />
             <input
               className="input sm:col-span-2"
               placeholder="Phone (optional)"

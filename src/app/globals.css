@@ -233,4 +233,17 @@ body {
     break-inside: avoid-page;
     page-break-inside: avoid;
   }
+  /* The priced document itself can also span multiple pages (long item or
+     payment lists) — see layoutPricedPages in document-view.tsx. Every page
+     but the last breaks; rows/blocks avoid splitting mid-element as a
+     safety net for the same reason as .menu-session above. */
+  .priced-page {
+    break-after: page;
+    page-break-after: always;
+  }
+  .doc-row,
+  .doc-noSplit {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
 }

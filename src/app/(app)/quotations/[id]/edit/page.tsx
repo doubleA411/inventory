@@ -37,6 +37,7 @@ export default async function EditQuotationPage({
           customerId: quotation.customerId,
           issueDate: quotation.issueDate,
           secondDate: quotation.validUntil,
+          venue: quotation.venue,
           notes: quotation.notes,
           terms: quotation.terms,
           items: items.map((i) => ({

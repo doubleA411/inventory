@@ -6,7 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { customers } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
-import { stateNameByCode } from "@/lib/india-states";
+import { stateNameByCode, TAMIL_NADU_CODE } from "@/lib/india-states";
 
 export type CustomerState = { error?: string; ok?: boolean; id?: string };
 
@@ -14,8 +14,8 @@ const schema = z.object({
   name: z.string().trim().min(1, "Customer name is required"),
   gstin: z.string().trim().optional().nullable(),
   addressLine: z.string().trim().optional().nullable(),
-  city: z.string().trim().optional().nullable(),
-  stateCode: z.string().trim().optional().nullable(),
+  district: z.string().trim().optional(),
+  location: z.string().trim().optional().nullable(),
   pincode: z.string().trim().optional().nullable(),
   phone: z.string().trim().optional().nullable(),
   email: z.string().trim().optional().nullable(),
@@ -36,8 +36,9 @@ export async function saveCustomer(
     name: d.name,
     gstin: d.gstin || null,
     addressLine: d.addressLine || null,
-    city: d.city || null,
-    stateCode: d.stateCode || null,
+    district: d.district?.trim() || "Chennai",
+    location: d.location || null,
+    stateCode: TAMIL_NADU_CODE,
     pincode: d.pincode || null,
     phone: d.phone || null,
     email: d.email || null,

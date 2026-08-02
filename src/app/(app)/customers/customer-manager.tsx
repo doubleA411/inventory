@@ -3,15 +3,14 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, UserPlus } from "lucide-react";
-import { INDIA_STATES, stateNameByCode } from "@/lib/india-states";
 import { saveCustomer, deleteCustomer } from "./actions";
 
 type Cust = {
   id: string;
   name: string;
   gstin: string | null;
-  city: string | null;
-  stateCode: string | null;
+  district: string;
+  location: string | null;
   phone: string | null;
   email: string | null;
 };
@@ -20,8 +19,8 @@ const empty = {
   name: "",
   gstin: "",
   addressLine: "",
-  city: "",
-  stateCode: "",
+  district: "Chennai",
+  location: "",
   pincode: "",
   phone: "",
   email: "",
@@ -69,7 +68,7 @@ export function CustomerManager({ customers }: { customers: Cust[] }) {
                 <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">GSTIN</th>
-                  <th className="px-4 py-3 font-medium">State</th>
+                  <th className="px-4 py-3 font-medium">Location</th>
                   <th className="px-4 py-3 font-medium">Phone</th>
                   <th className="px-4 py-3"></th>
                 </tr>
@@ -80,7 +79,7 @@ export function CustomerManager({ customers }: { customers: Cust[] }) {
                     <td className="px-4 py-3 font-medium">{c.name}</td>
                     <td className="px-4 py-3 text-(--color-muted)">{c.gstin ?? "—"}</td>
                     <td className="px-4 py-3 text-(--color-muted)">
-                      {stateNameByCode(c.stateCode) ?? "—"}
+                      {[c.location, c.district].filter(Boolean).join(", ") || "—"}
                     </td>
                     <td className="px-4 py-3 text-(--color-muted)">{c.phone ?? "—"}</td>
                     <td className="px-4 py-3 text-right">
@@ -102,21 +101,15 @@ export function CustomerManager({ customers }: { customers: Cust[] }) {
         <input className="input" placeholder="GSTIN" value={f.gstin} onChange={set("gstin")} />
         <input className="input" placeholder="Address" value={f.addressLine} onChange={set("addressLine")} />
         <div className="grid grid-cols-2 gap-2">
-          <input className="input" placeholder="City" value={f.city} onChange={set("city")} />
-          <input className="input" placeholder="PIN" value={f.pincode} onChange={set("pincode")} />
+          <input className="input" placeholder="District" value={f.district} onChange={set("district")} />
+          <input className="input" placeholder="Location (area)" value={f.location} onChange={set("location")} />
         </div>
-        <select className="input" value={f.stateCode} onChange={set("stateCode")}>
-          <option value="">State (place of supply)</option>
-          {INDIA_STATES.map((s) => (
-            <option key={s.code} value={s.code}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+        <input className="input" placeholder="PIN" value={f.pincode} onChange={set("pincode")} />
         <div className="grid grid-cols-2 gap-2">
           <input className="input" placeholder="Phone" value={f.phone} onChange={set("phone")} />
           <input className="input" placeholder="Email" value={f.email} onChange={set("email")} />
         </div>
+        <p className="text-xs text-(--color-muted)">State: Tamil Nadu — set automatically.</p>
         {error && <p className="text-sm text-(--color-danger)">{error}</p>}
         <button className="btn-primary w-full" onClick={save} disabled={pending || !f.name.trim()}>
           <UserPlus className="h-4 w-4" /> Add customer

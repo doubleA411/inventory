@@ -24,6 +24,15 @@ export function PaymentForm({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [amount, setAmount] = useState(due > 0 ? String(due) : "");
+  // `due` changes after each recorded payment (via router.refresh()) — reset
+  // the input to the new balance rather than leaving the last-typed amount.
+  // Adjusting state during render (not an effect) per React's guidance for
+  // "state that depends on a changed prop".
+  const [prevDue, setPrevDue] = useState(due);
+  if (due !== prevDue) {
+    setPrevDue(due);
+    setAmount(due > 0 ? String(due) : "");
+  }
   const [method, setMethod] = useState<(typeof METHODS)[number]["value"]>("cash");
   const [reference, setReference] = useState("");
   const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
