@@ -8,17 +8,20 @@ import { createCategoryAction, type ActionState } from "./actions";
 
 type Unit = { id: string; name: string; symbol: string; groupName: string };
 type Category = { id: string; name: string };
+type Vendor = { id: string; name: string };
 
 export function ProductForm({
   action,
   units,
   categories,
+  vendors = [],
   defaults,
   submitLabel,
 }: {
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>;
   units: Unit[];
   categories: Category[];
+  vendors?: Vendor[];
   defaults?: {
     name?: string;
     code?: string | null;
@@ -26,6 +29,7 @@ export function ProductForm({
     stockUnitId?: string;
     reorderLevel?: string;
     costPrice?: string | null;
+    preferredVendorId?: string | null;
     notes?: string | null;
   };
   submitLabel: string;
@@ -38,6 +42,7 @@ export function ProductForm({
   const [addingCat, setAddingCat] = useState(false);
   const [newCat, setNewCat] = useState("");
   const [catBusy, setCatBusy] = useState(false);
+  const [vendorId, setVendorId] = useState(defaults?.preferredVendorId ?? "");
 
   async function addCategory() {
     if (!newCat.trim()) return;
@@ -192,6 +197,71 @@ export function ProductForm({
             placeholder="Optional"
           />
         </div>
+
+        <div>
+          <label className="label" htmlFor="preferredVendorId">
+            Preferred vendor
+          </label>
+          <select
+            id="preferredVendorId"
+            name="preferredVendorId"
+            value={vendorId}
+            onChange={(e) => setVendorId(e.target.value)}
+            className="input"
+          >
+            <option value="">— None —</option>
+            {vendors.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-(--color-muted)">
+            Just a default — pre-fills the vendor when you restock this product.
+            You can still buy it from anyone else.
+          </p>
+        </div>
+
+        {vendorId && (
+          <div className="sm:col-span-2 rounded-lg border border-(--color-border) p-4">
+            <p className="mb-3 text-sm font-medium">Log a purchase from this vendor</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="label" htmlFor="restockQty">
+                  Quantity received
+                </label>
+                <input
+                  id="restockQty"
+                  name="restockQty"
+                  type="number"
+                  step="any"
+                  min="0"
+                  className="input"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="restockPaidNow">
+                  Paid now
+                </label>
+                <input
+                  id="restockPaidNow"
+                  name="restockPaidNow"
+                  type="number"
+                  step="any"
+                  min="0"
+                  className="input"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-(--color-muted)">
+              Leave quantity blank if you&apos;re just setting a default vendor.
+              Fill it in to restock and log this as a purchase bill, using the
+              cost price above as the rate.
+            </p>
+          </div>
+        )}
 
         <div className="sm:col-span-2">
           <label className="label" htmlFor="notes">

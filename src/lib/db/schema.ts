@@ -11,6 +11,7 @@ import {
   unique,
   index,
   jsonb,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -83,6 +84,7 @@ export const organizations = pgTable("organizations", {
   // Document numbering & defaults
   invoicePrefix: text("invoice_prefix").notNull().default("INV"),
   quotePrefix: text("quote_prefix").notNull().default("QUO"),
+  purchaseBillPrefix: text("purchase_bill_prefix").notNull().default("PB"),
   // Last invoice number issued outside this app, if migrating from another
   // system — the next generated invoice's seq will be this + 1.
   invoiceStartingNumber: integer("invoice_starting_number").notNull().default(0),
@@ -211,6 +213,12 @@ export const products = pgTable(
       .notNull()
       .default("0"),
     costPrice: numeric("cost_price", { precision: 20, scale: 2 }),
+    // Convenience default only — a product is never locked to one supplier,
+    // this just pre-fills the vendor picker on Restock. Always overridable.
+    preferredVendorId: uuid("preferred_vendor_id").references(
+      (): AnyPgColumn => vendors.id,
+      { onDelete: "set null" },
+    ),
     notes: text("notes"),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -245,6 +253,13 @@ export const stockBatches = pgTable(
     // adjustment-created batches with no real purchase price.
     unitCost: numeric("unit_cost", { precision: 14, scale: 2 }),
     note: text("note"),
+    // Set when this batch was received via a purchase bill line item (either
+    // the full editor or the vendor+amount fields on a quick restock) — null
+    // for batches created by a plain restock/adjustment with no vendor.
+    purchaseBillItemId: uuid("purchase_bill_item_id").references(
+      (): AnyPgColumn => purchaseBillItems.id,
+      { onDelete: "set null" },
+    ),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("batches_product_idx").on(t.productId)],
@@ -646,6 +661,126 @@ export const expensesRelations = relations(expenses, ({ one }) => ({
   }),
 }));
 
+// ===========================================================================
+// Vendors & purchasing: what was bought, from whom, and what's still owed.
+// A product is never tied to one fixed vendor — vendor is recorded per
+// purchase (bill), same reasoning as customers not being tied to one venue.
+// ===========================================================================
+export const purchaseBillStatusEnum = pgEnum("purchase_bill_status", [
+  "active",
+  "cancelled",
+]);
+
+export const vendors = pgTable(
+  "vendors",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    gstin: text("gstin"),
+    addressLine: text("address_line"),
+    district: text("district").notNull().default("Chennai"),
+    location: text("location"), // area/locality within the district
+    stateCode: text("state_code"), // always Tamil Nadu, not user-editable — kept for symmetry with customers
+    pincode: text("pincode"),
+    phone: text("phone"),
+    email: text("email"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("vendors_org_idx").on(t.organizationId)],
+);
+
+export const purchaseBills = pgTable(
+  "purchase_bills",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    number: text("number").notNull(), // e.g. PB/25-26/0001
+    seq: integer("seq").notNull(),
+    fy: text("fy").notNull(),
+    vendorId: uuid("vendor_id").references(() => vendors.id, { onDelete: "set null" }),
+    billDate: date("bill_date").notNull().defaultNow(),
+    status: purchaseBillStatusEnum("status").notNull().default("active"),
+    // No GST breakdown — most vendors here don't issue tax invoices; this is
+    // a plain bill, not a tax document.
+    subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull().default("0"),
+    total: numeric("total", { precision: 14, scale: 2 }).notNull().default("0"),
+    amountPaid: numeric("amount_paid", { precision: 14, scale: 2 }).notNull().default("0"),
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("purchase_bills_org_number_uq").on(t.organizationId, t.number),
+    index("purchase_bills_org_idx").on(t.organizationId),
+    index("purchase_bills_vendor_idx").on(t.vendorId),
+  ],
+);
+
+export const purchaseBillItems = pgTable("purchase_bill_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  purchaseBillId: uuid("purchase_bill_id")
+    .notNull()
+    .references(() => purchaseBills.id, { onDelete: "cascade" }),
+  position: integer("position").notNull().default(0),
+  // Null for a freeform charge line (delivery, packing…) that doesn't touch
+  // inventory. Set for a product line, which creates a stock batch.
+  productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+  description: text("description").notNull(),
+  quantity: numeric("quantity", { precision: 20, scale: 6 }).notNull().default("1"),
+  unit: text("unit"),
+  rate: numeric("rate", { precision: 14, scale: 2 }).notNull().default("0"),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull().default("0"),
+});
+
+export const purchaseBillPayments = pgTable(
+  "purchase_bill_payments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    purchaseBillId: uuid("purchase_bill_id")
+      .notNull()
+      .references(() => purchaseBills.id, { onDelete: "cascade" }),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    method: paymentMethodEnum("method").notNull().default("cash"),
+    reference: text("reference"),
+    paidAt: date("paid_at").notNull().defaultNow(),
+    note: text("note"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("purchase_bill_payments_bill_idx").on(t.purchaseBillId)],
+);
+
+export const vendorsRelations = relations(vendors, ({ many }) => ({
+  purchaseBills: many(purchaseBills),
+}));
+export const purchaseBillsRelations = relations(purchaseBills, ({ one, many }) => ({
+  vendor: one(vendors, {
+    fields: [purchaseBills.vendorId],
+    references: [vendors.id],
+  }),
+  items: many(purchaseBillItems),
+  payments: many(purchaseBillPayments),
+}));
+export const purchaseBillItemsRelations = relations(purchaseBillItems, ({ one }) => ({
+  purchaseBill: one(purchaseBills, {
+    fields: [purchaseBillItems.purchaseBillId],
+    references: [purchaseBills.id],
+  }),
+  product: one(products, {
+    fields: [purchaseBillItems.productId],
+    references: [products.id],
+  }),
+}));
+
 export type Customer = typeof customers.$inferSelect;
 export type Quotation = typeof quotations.$inferSelect;
 export type QuotationItem = typeof quotationItems.$inferSelect;
@@ -658,3 +793,8 @@ export type QuoteStatus = (typeof quoteStatusEnum.enumValues)[number];
 export type InvoiceStatus = (typeof invoiceStatusEnum.enumValues)[number];
 export type DocType = (typeof docTypeEnum.enumValues)[number];
 export type PaymentMethod = (typeof paymentMethodEnum.enumValues)[number];
+export type Vendor = typeof vendors.$inferSelect;
+export type PurchaseBill = typeof purchaseBills.$inferSelect;
+export type PurchaseBillItem = typeof purchaseBillItems.$inferSelect;
+export type PurchaseBillPayment = typeof purchaseBillPayments.$inferSelect;
+export type PurchaseBillStatus = (typeof purchaseBillStatusEnum.enumValues)[number];

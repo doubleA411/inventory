@@ -12,6 +12,7 @@ export const productSchema = z.object({
   stockUnitId: z.string().uuid("Choose a unit"),
   reorderLevel: z.coerce.number().min(0).default(0),
   costPrice: z.coerce.number().min(0).optional().nullable(),
+  preferredVendorId: z.string().uuid().optional().nullable(),
   notes: z.string().trim().optional().nullable(),
 });
 
@@ -33,6 +34,7 @@ export async function createProduct(
         stockUnitId: input.stockUnitId,
         reorderLevel: String(input.reorderLevel),
         costPrice: input.costPrice != null ? String(input.costPrice) : null,
+        preferredVendorId: input.preferredVendorId ?? null,
         notes: input.notes ?? null,
       })
       .returning();
@@ -60,6 +62,7 @@ export async function updateProduct(
         stockUnitId: input.stockUnitId,
         reorderLevel: String(input.reorderLevel),
         costPrice: input.costPrice != null ? String(input.costPrice) : null,
+        preferredVendorId: input.preferredVendorId ?? null,
         notes: input.notes ?? null,
       })
       .where(and(eq(products.id, productId), eq(products.organizationId, organizationId)));

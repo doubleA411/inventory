@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ArrowDownCircle, ArrowUpCircle, Trash2, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logMovementAction, type ActionState } from "../actions";
@@ -9,6 +10,7 @@ import type { MovementType } from "@/lib/db/schema";
 
 type Unit = { id: string; name: string; symbol: string };
 type InvoiceOption = { id: string; number: string; customerName: string | null };
+type VendorOption = { id: string; name: string };
 
 const TABS: {
   type: MovementType;
@@ -27,12 +29,16 @@ export function MovementPanel({
   units,
   defaultUnitId,
   invoices = [],
+  vendors = [],
+  defaultVendorId,
   lastCostPrice,
 }: {
   productId: string;
   units: Unit[];
   defaultUnitId: string;
   invoices?: InvoiceOption[];
+  vendors?: VendorOption[];
+  defaultVendorId?: string | null;
   lastCostPrice?: number | null;
 }) {
   const [type, setType] = useState<MovementType>("restock");
@@ -138,6 +144,52 @@ export function MovementPanel({
                 placeholder={
                   lastCostPrice != null ? `Last: ${lastCostPrice}` : "0.00"
                 }
+              />
+            </div>
+          </div>
+        )}
+
+        {type === "restock" && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label" htmlFor="vendorId">
+                Vendor (optional)
+              </label>
+              <select
+                id="vendorId"
+                name="vendorId"
+                className="input"
+                defaultValue={defaultVendorId ?? ""}
+              >
+                <option value="">— Not tracked to a vendor —</option>
+                {vendors.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </select>
+              {vendors.length === 0 && (
+                <p className="mt-1 text-xs text-(--color-muted)">
+                  No vendors yet —{" "}
+                  <Link href="/vendors" className="underline">
+                    add one
+                  </Link>{" "}
+                  to track who this was bought from.
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="label" htmlFor="paidNow">
+                Paid now (optional)
+              </label>
+              <input
+                id="paidNow"
+                name="paidNow"
+                type="number"
+                step="any"
+                min="0"
+                className="input"
+                placeholder="0.00"
               />
             </div>
           </div>

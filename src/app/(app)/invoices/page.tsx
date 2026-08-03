@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { listInvoices, billingSummary, displayInvoiceStatus } from "@/lib/billing-queries";
 import { PageHeader, StatCard, Badge, EmptyState, DateFilter } from "@/components/ui";
 import { SearchBox } from "@/components/search-box";
+import { ClickableRow, stopRowClick } from "@/components/clickable-row";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { INVOICE_STATUS_META } from "@/lib/labels";
 import { Plus } from "lucide-react";
@@ -88,9 +89,17 @@ export default async function InvoicesPage({
                   const meta = INVOICE_STATUS_META[st];
                   const due = Number(r.total) - Number(r.amountPaid);
                   return (
-                    <tr key={r.id} className="hover:bg-(--color-bg)">
+                    <ClickableRow
+                      key={r.id}
+                      href={`/invoices/${r.id}`}
+                      className="hover:bg-(--color-bg)"
+                    >
                       <td className="px-4 py-3">
-                        <Link href={`/invoices/${r.id}`} className="font-medium hover:underline">
+                        <Link
+                          href={`/invoices/${r.id}`}
+                          onClick={stopRowClick}
+                          className="font-medium hover:underline"
+                        >
                           {r.number}
                         </Link>
                         {r.docType === "bill_of_supply" && (
@@ -109,7 +118,7 @@ export default async function InvoicesPage({
                       <td className="px-4 py-3">
                         <Badge tone={meta.tone}>{meta.label}</Badge>
                       </td>
-                    </tr>
+                    </ClickableRow>
                   );
                 })}
               </tbody>

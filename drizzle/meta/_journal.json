@@ -120,6 +120,20 @@
       "when": 1785672081569,
       "tag": "0016_add_doc_title_top",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785692036037,
+      "tag": "0017_add_vendors_purchase_bills",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785734046112,
+      "tag": "0018_add_product_preferred_vendor",
+      "breakpoints": true
     }
   ]
 }

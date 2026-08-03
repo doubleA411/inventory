@@ -4,6 +4,7 @@ import { listProducts } from "@/lib/queries";
 import { PageHeader, Badge, EmptyState } from "@/components/ui";
 import { CostTrendBadge } from "@/components/cost-trend";
 import { SearchBox } from "@/components/search-box";
+import { ClickableRow, stopRowClick } from "@/components/clickable-row";
 import { fmtQty } from "@/lib/utils";
 import { Plus } from "lucide-react";
 
@@ -115,10 +116,15 @@ export default async function ProductsPage({
                         ? { tone: "warn" as const, label: "Low" }
                         : { tone: "ok" as const, label: "OK" };
                   return (
-                    <tr key={p.id} className="hover:bg-(--color-bg)">
+                    <ClickableRow
+                      key={p.id}
+                      href={`/products/${p.id}`}
+                      className="hover:bg-(--color-bg)"
+                    >
                       <td className="px-4 py-3">
                         <Link
                           href={`/products/${p.id}`}
+                          onClick={stopRowClick}
                           className="font-medium hover:underline"
                         >
                           {p.name}
@@ -147,7 +153,7 @@ export default async function ProductsPage({
                       <td className="px-4 py-3">
                         <Badge tone={status.tone}>{status.label}</Badge>
                       </td>
-                    </tr>
+                    </ClickableRow>
                   );
                 })}
               </tbody>

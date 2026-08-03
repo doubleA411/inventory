@@ -8,6 +8,7 @@ import {
   EXPIRY_SOON_DAYS,
 } from "@/lib/queries";
 import { listInvoices } from "@/lib/billing-queries";
+import { listVendors } from "@/lib/purchase-queries";
 import { Badge } from "@/components/ui";
 import { fmtQty, fmtDate, fmtMoney } from "@/lib/utils";
 import { MOVEMENT_META } from "@/lib/labels";
@@ -26,10 +27,11 @@ export default async function ProductDetailPage({
   if (!detail) notFound();
 
   const { product, unit, category, batches, movements } = detail;
-  const [allUnits, invoiceList, usage] = await Promise.all([
+  const [allUnits, invoiceList, usage, vendorList] = await Promise.all([
     listUnits(organization.id),
     listInvoices(organization.id),
     productUsageTotals(id),
+    listVendors(organization.id),
   ]);
   // Movement units must share the product's unit group (convertible).
   const convUnits = allUnits
@@ -262,6 +264,8 @@ export default async function ProductDetailPage({
               units={convUnits}
               defaultUnitId={product.stockUnitId}
               invoices={billOptions}
+              vendors={vendorList.map((v) => ({ id: v.id, name: v.name }))}
+              defaultVendorId={product.preferredVendorId}
               lastCostPrice={product.costPrice != null ? Number(product.costPrice) : null}
             />
           </div>

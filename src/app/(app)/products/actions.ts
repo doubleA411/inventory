@@ -9,6 +9,7 @@ import { products, categories } from "@/lib/db/schema";
 import { requireAuth, requireRole } from "@/lib/auth";
 import { applyMovement } from "@/lib/stock";
 import { productSchema, createProduct, updateProduct } from "@/lib/products";
+import { restockWithVendor } from "@/lib/purchases";
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -17,11 +18,54 @@ function str(v: FormDataEntryValue | null): string | null {
   return s.length ? s : null;
 }
 
+const restockOnSaveSchema = z.object({
+  restockQty: z.coerce.number().min(0).optional().nullable(),
+  restockPaidNow: z.coerce.number().min(0).optional().nullable(),
+});
+
+/**
+ * If the product form's "log a purchase" fields were filled in (a vendor is
+ * set and a quantity was entered), restock the product and create a
+ * one-line purchase bill for it — the same flow as the Restock quick-path,
+ * triggered from the product form instead. Silently skipped otherwise, so
+ * ordinary edits never restock or create a bill.
+ */
+async function maybeRestockFromProductForm(
+  organization: Parameters<typeof restockWithVendor>[0],
+  userId: string,
+  productId: string,
+  stockUnitId: string,
+  preferredVendorId: string | null | undefined,
+  costPrice: number | null | undefined,
+  formData: FormData,
+): Promise<{ error?: string } | void> {
+  const parsed = restockOnSaveSchema.safeParse({
+    restockQty: str(formData.get("restockQty")),
+    restockPaidNow: str(formData.get("restockPaidNow")),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  const { restockQty, restockPaidNow } = parsed.data;
+  if (!restockQty || restockQty <= 0 || !preferredVendorId) return;
+
+  const result = await restockWithVendor(organization, userId, {
+    productId,
+    quantity: restockQty,
+    unitId: stockUnitId,
+    unitCost: costPrice ?? null,
+    vendorId: preferredVendorId,
+    paidNow: restockPaidNow,
+  });
+  if (!result.ok) return { error: result.error };
+  revalidatePath("/vendors");
+  revalidatePath(`/vendors/${preferredVendorId}`);
+  revalidatePath("/movements");
+}
+
 export async function createProductAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const parsed = productSchema.safeParse({
     name: formData.get("name"),
     code: str(formData.get("code")),
@@ -29,6 +73,7 @@ export async function createProductAction(
     stockUnitId: formData.get("stockUnitId"),
     reorderLevel: formData.get("reorderLevel") || 0,
     costPrice: str(formData.get("costPrice")),
+    preferredVendorId: str(formData.get("preferredVendorId")),
     notes: str(formData.get("notes")),
   });
   if (!parsed.success) {
@@ -36,6 +81,16 @@ export async function createProductAction(
   }
   const result = await createProduct(organization.id, parsed.data);
   if (!result.ok) return { error: result.error };
+  const restock = await maybeRestockFromProductForm(
+    organization,
+    user.id,
+    result.id,
+    parsed.data.stockUnitId,
+    parsed.data.preferredVendorId,
+    parsed.data.costPrice,
+    formData,
+  );
+  if (restock?.error) return { error: restock.error };
   revalidatePath("/products");
   redirect("/products");
 }
@@ -45,7 +100,7 @@ export async function updateProductAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const parsed = productSchema.safeParse({
     name: formData.get("name"),
     code: str(formData.get("code")),
@@ -53,6 +108,7 @@ export async function updateProductAction(
     stockUnitId: formData.get("stockUnitId"),
     reorderLevel: formData.get("reorderLevel") || 0,
     costPrice: str(formData.get("costPrice")),
+    preferredVendorId: str(formData.get("preferredVendorId")),
     notes: str(formData.get("notes")),
   });
   if (!parsed.success) {
@@ -60,6 +116,16 @@ export async function updateProductAction(
   }
   const result = await updateProduct(organization.id, productId, parsed.data);
   if (!result.ok) return { error: result.error };
+  const restock = await maybeRestockFromProductForm(
+    organization,
+    user.id,
+    productId,
+    parsed.data.stockUnitId,
+    parsed.data.preferredVendorId,
+    parsed.data.costPrice,
+    formData,
+  );
+  if (restock?.error) return { error: restock.error };
   revalidatePath("/products");
   revalidatePath(`/products/${productId}`);
   redirect(`/products/${productId}`);
@@ -103,6 +169,8 @@ const movementSchema = z.object({
   unitCost: z.coerce.number().min(0).optional().nullable(),
   note: z.string().trim().optional().nullable(),
   invoiceId: z.string().uuid().optional().nullable(),
+  vendorId: z.string().uuid().optional().nullable(),
+  paidNow: z.coerce.number().min(0).optional().nullable(),
 });
 
 export async function logMovementAction(
@@ -120,26 +188,48 @@ export async function logMovementAction(
     unitCost: str(formData.get("unitCost")),
     note: str(formData.get("note")),
     invoiceId: str(formData.get("invoiceId")) ?? undefined,
+    vendorId: str(formData.get("vendorId")) ?? undefined,
+    paidNow: str(formData.get("paidNow")),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const d = parsed.data;
-  const result = await applyMovement({
-    organizationId: organization.id,
-    productId: d.productId,
-    type: d.type,
-    quantity: d.quantity,
-    unitId: d.unitId,
-    userId: user.id,
-    note: d.note ?? null,
-    direction: d.direction,
-    expiryDate: d.type === "restock" ? d.expiryDate ?? null : null,
-    unitCost: d.type === "restock" ? d.unitCost ?? null : null,
-    invoiceId:
-      d.type === "usage" || d.type === "waste" ? d.invoiceId ?? null : null,
-  });
-  if (!result.ok) return { error: result.error };
+
+  // Vendor picked on a restock — restock and wrap the new batch in a
+  // one-line purchase bill so it shows up in the vendor's ledger.
+  if (d.type === "restock" && d.vendorId) {
+    const result = await restockWithVendor(organization, user.id, {
+      productId: d.productId,
+      quantity: d.quantity,
+      unitId: d.unitId,
+      unitCost: d.unitCost ?? null,
+      expiryDate: d.expiryDate ?? null,
+      vendorId: d.vendorId,
+      paidNow: d.paidNow,
+      note: d.note ?? null,
+    });
+    if (!result.ok) return { error: result.error };
+    revalidatePath("/vendors");
+    revalidatePath(`/vendors/${d.vendorId}`);
+  } else {
+    const result = await applyMovement({
+      organizationId: organization.id,
+      productId: d.productId,
+      type: d.type,
+      quantity: d.quantity,
+      unitId: d.unitId,
+      userId: user.id,
+      note: d.note ?? null,
+      direction: d.direction,
+      expiryDate: d.type === "restock" ? d.expiryDate ?? null : null,
+      unitCost: d.type === "restock" ? d.unitCost ?? null : null,
+      invoiceId:
+        d.type === "usage" || d.type === "waste" ? d.invoiceId ?? null : null,
+    });
+    if (!result.ok) return { error: result.error };
+  }
+
   revalidatePath(`/products/${d.productId}`);
   revalidatePath("/products");
   revalidatePath("/dashboard");
