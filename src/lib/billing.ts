@@ -42,6 +42,8 @@ export const invoiceSchema = z.object({
   applyGst: z.boolean().optional(),
   notes: z.string().trim().optional().nullable(),
   terms: z.string().trim().optional().nullable(),
+  // Whether the printed menu page (dish lists) is included on this invoice.
+  showMenuList: z.boolean().optional(),
   items: z.array(itemSchema),
 });
 export type InvoiceInput = z.infer<typeof invoiceSchema>;
@@ -138,6 +140,7 @@ export async function saveInvoiceCore(
             total: String(totals.total),
             notes: d.notes || null,
             terms: d.terms || null,
+            showMenuList: d.showMenuList ?? true,
             // editing an approved invoice clears approval — owner must re-approve
             approvedAt: null,
             approvedBy: null,
@@ -177,6 +180,7 @@ export async function saveInvoiceCore(
             total: String(totals.total),
             notes: d.notes || null,
             terms: d.terms || null,
+            showMenuList: d.showMenuList ?? true,
             createdBy: userId,
           })
           .returning();

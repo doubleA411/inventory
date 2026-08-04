@@ -118,6 +118,7 @@ export default async function SettingsPage() {
             defaultTaxRate: o.defaultTaxRate,
             defaultSac: o.defaultSac,
             bankName: o.bankName,
+            bankAccountName: o.bankAccountName,
             bankAccount: o.bankAccount,
             bankIfsc: o.bankIfsc,
             bankUpi: o.bankUpi,

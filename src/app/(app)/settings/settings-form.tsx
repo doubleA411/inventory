@@ -19,6 +19,7 @@ type OrgSettings = {
   defaultTaxRate: string;
   defaultSac: string | null;
   bankName: string | null;
+  bankAccountName: string | null;
   bankAccount: string | null;
   bankIfsc: string | null;
   bankUpi: string | null;
@@ -179,6 +180,7 @@ export function SettingsForm({ org }: { org: OrgSettings }) {
       <Section title="Bank details" desc="Shown on invoices for payment.">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Bank name" name="bankName" defaultValue={org.bankName} />
+          <Field label="Account name" name="bankAccountName" defaultValue={org.bankAccountName} />
           <Field label="Account number" name="bankAccount" defaultValue={org.bankAccount} />
           <Field label="IFSC" name="bankIfsc" defaultValue={org.bankIfsc} />
           <Field label="UPI ID" name="bankUpi" defaultValue={org.bankUpi} />

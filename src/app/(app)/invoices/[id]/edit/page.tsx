@@ -41,6 +41,7 @@ export default async function EditInvoicePage({
           notes: invoice.notes,
           terms: invoice.terms,
           applyGst: invoice.docType === "tax_invoice",
+          showMenuList: invoice.showMenuList,
           items: items.map((i) => ({
             description: i.description,
             hsnSac: i.hsnSac,

@@ -1,11 +1,20 @@
 "use client";
 
-import { Fragment, useMemo, useState, useTransition } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronDown, ChevronRight, ListPlus, Plus, Trash2, UserPlus } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ListPlus,
+  Pencil,
+  Plus,
+  GripVertical,
+  Trash2,
+  UserPlus,
+} from "lucide-react";
 import { computeTotals } from "@/lib/tax";
-import { fmtMoney } from "@/lib/utils";
+import { fmtMoney, cn } from "@/lib/utils";
 import { saveCustomer } from "@/app/(app)/customers/actions";
 import { TAMIL_NADU_CODE } from "@/lib/india-states";
 
@@ -31,6 +40,7 @@ export type DocEditorInitial = {
   notes?: string | null;
   terms?: string | null;
   applyGst?: boolean; // invoice only
+  showMenuList?: boolean; // invoice only
   items?: {
     description: string;
     hsnSac?: string | null;
@@ -113,8 +123,25 @@ export function DocEditor({
       : [newRow({ taxRate: gstEnabled ? defaultTaxRate : "0", hsnSac: defaultSac ?? "" })],
   );
   const [applyGst, setApplyGst] = useState(initial?.applyGst ?? true);
+  const [showMenuList, setShowMenuList] = useState(initial?.showMenuList ?? true);
   const effectiveGst = kind === "invoice" ? gstEnabled && applyGst : gstEnabled;
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  // The line-items table scrolls horizontally on narrow screens; the expanded
+  // menu-items editor is a full editing surface, not another data column, so
+  // it's pinned to the visible (scrolled) width instead of scrolling away
+  // with the rest of the row — otherwise its numbers and action buttons end
+  // up off-screen past whatever horizontal scroll position the table is at.
+  const itemsScrollRef = useRef<HTMLDivElement>(null);
+  const [itemsScrollWidth, setItemsScrollWidth] = useState<number>(0);
+  useEffect(() => {
+    const el = itemsScrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      setItemsScrollWidth(entries[0].contentRect.width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   function toggleMenuItems(key: string) {
     setExpandedRows((s) => {
       const next = new Set(s);
@@ -193,6 +220,7 @@ export function DocEditor({
             notes,
             terms,
             applyGst: gstEnabled ? applyGst : undefined,
+            showMenuList,
             items: rows.map((r) => ({
               description: r.description,
               hsnSac: r.hsnSac || null,
@@ -347,7 +375,7 @@ export function DocEditor({
 
       {/* Line items */}
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" ref={itemsScrollRef}>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-(--color-border) text-left text-xs uppercase text-(--color-muted)">
@@ -451,7 +479,15 @@ export function DocEditor({
                 </tr>
                 {expandedRows.has(r.key) && (
                   <tr>
-                    <td colSpan={gstEnabled ? 8 : 7} className="bg-(--color-bg) px-4 py-3">
+                    <td colSpan={gstEnabled ? 8 : 7} className="bg-(--color-bg) p-0">
+                      {/* A colSpan cell is forced to the table's full (scrollable)
+                          width by the auto table-layout algorithm no matter what
+                          width we give the <td> itself — so the width cap has to
+                          go on this inner sticky wrapper instead, not the cell. */}
+                      <div
+                        className="sticky left-0 px-4 py-3"
+                        style={itemsScrollWidth ? { width: itemsScrollWidth } : undefined}
+                      >
                       <MenuItemsEditor
                         eventDate={r.eventDate}
                         onEventDateChange={(eventDate) => updateRow(r.key, { eventDate })}
@@ -464,7 +500,18 @@ export function DocEditor({
                             menuItems: r.menuItems.filter((_, mi) => mi !== i),
                           })
                         }
+                        onEdit={(i, text) =>
+                          updateRow(r.key, {
+                            menuItems: r.menuItems.map((m, mi) => (mi === i ? text : m)),
+                          })
+                        }
+                        onReorder={(from, to) =>
+                          updateRow(r.key, {
+                            menuItems: reorderItems(r.menuItems, from, to),
+                          })
+                        }
                       />
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -519,6 +566,22 @@ export function DocEditor({
               </span>
             </label>
           )}
+          {kind === "invoice" && (
+            <label className="mb-3 flex items-start gap-2 border-b border-(--color-border) pb-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={showMenuList}
+                onChange={(e) => setShowMenuList(e.target.checked)}
+              />
+              <span>
+                Include menu list
+                <span className="block text-xs text-(--color-muted)">
+                  Prints the dish list pages ahead of the priced invoice.
+                </span>
+              </span>
+            </label>
+          )}
           <Row label="Subtotal" value={fmtMoney(totals.subtotal, currency)} />
           {effectiveGst && intraState && (
             <>
@@ -563,26 +626,60 @@ export function DocEditor({
   );
 }
 
+function reorderItems<T>(items: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) {
+    return items;
+  }
+  const next = [...items];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
 function MenuItemsEditor({
   eventDate,
   onEventDateChange,
   items,
   onAdd,
   onRemove,
+  onEdit,
+  onReorder,
 }: {
   eventDate: string;
   onEventDateChange: (value: string) => void;
   items: string[];
   onAdd: (text: string) => void;
   onRemove: (index: number) => void;
+  onEdit: (index: number, text: string) => void;
+  onReorder: (from: number, to: number) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
   function submit() {
     if (draft.trim()) {
       onAdd(draft.trim());
       setDraft("");
     }
   }
+  function startEdit(i: number, current: string) {
+    setEditingIndex(i);
+    setEditDraft(current);
+  }
+  function saveEdit() {
+    if (editingIndex === null) return;
+    if (editDraft.trim()) onEdit(editingIndex, editDraft.trim());
+    setEditingIndex(null);
+    setEditDraft("");
+  }
+  function endDrag() {
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }
+
   return (
     <div>
       <label className="label mb-2 block">Event date</label>
@@ -592,23 +689,96 @@ function MenuItemsEditor({
         value={eventDate}
         onChange={(e) => onEventDateChange(e.target.value)}
       />
-      <p className="label mb-2">Menu items (printed as a numbered list on the menu page)</p>
+      <p className="label mb-2">
+        Menu items (printed as a numbered list on the menu page) — drag{" "}
+        <GripVertical className="inline h-3.5 w-3.5 align-text-bottom" /> to reorder
+      </p>
       {items.length > 0 && (
-        <ol className="mb-2 list-decimal space-y-1 pl-5 text-sm">
-          {items.map((m, i) => (
-            <li key={i}>
-              <div className="flex items-center justify-between gap-2">
-                <span>{m}</span>
-                <button
-                  type="button"
-                  className="btn-ghost px-1 py-0.5"
-                  onClick={() => onRemove(i)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </li>
-          ))}
+        <ol className="mb-2 list-decimal space-y-1 pl-8 text-sm">
+          {items.map((m, i) =>
+            editingIndex === i ? (
+              <li key={i}>
+                <div className="flex items-center gap-2 py-0.5">
+                  <input
+                    className="input"
+                    autoFocus
+                    value={editDraft}
+                    onChange={(e) => setEditDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        saveEdit();
+                      } else if (e.key === "Escape") {
+                        setEditingIndex(null);
+                      }
+                    }}
+                  />
+                  <button type="button" className="btn-outline shrink-0" onClick={saveEdit}>
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost shrink-0"
+                    onClick={() => setEditingIndex(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </li>
+            ) : (
+              <li
+                key={i}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (dragIndex !== null && dragIndex !== i) setDragOverIndex(i);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragIndex !== null && dragIndex !== i) onReorder(dragIndex, i);
+                  endDrag();
+                }}
+                className={cn(
+                  "-ml-2 rounded pl-2 pr-1 transition-colors",
+                  dragOverIndex === i && "bg-(--color-primary-soft)",
+                  dragIndex === i && "opacity-40",
+                )}
+              >
+                <div className="flex items-center justify-between gap-2 py-1">
+                  <span>{m}</span>
+                  <div className="flex items-center gap-0.5">
+                    <span
+                      draggable
+                      onDragStart={(e) => {
+                        setDragIndex(i);
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragEnd={endDrag}
+                      className="cursor-grab px-1 py-0.5 text-(--color-muted) active:cursor-grabbing"
+                      title="Drag to reorder"
+                    >
+                      <GripVertical className="h-3.5 w-3.5" />
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-ghost px-1 py-0.5"
+                      title="Edit"
+                      onClick={() => startEdit(i, m)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost px-1 py-0.5"
+                      title="Remove"
+                      onClick={() => onRemove(i)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </li>
+            ),
+          )}
         </ol>
       )}
       <div className="flex gap-2">

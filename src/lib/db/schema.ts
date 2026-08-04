@@ -77,6 +77,7 @@ export const organizations = pgTable("organizations", {
 
   // Bank details (invoice footer)
   bankName: text("bank_name"),
+  bankAccountName: text("bank_account_name"),
   bankAccount: text("bank_account"),
   bankIfsc: text("bank_ifsc"),
   bankUpi: text("bank_upi"),
@@ -507,6 +508,10 @@ export const invoices = pgTable(
       .default("0"),
     notes: text("notes"),
     terms: text("terms"),
+    // Whether the printed menu page (dish lists under each line item) is
+    // included — off by default doesn't make sense for a catering app, so
+    // this defaults to shown, same as it always was before it was optional.
+    showMenuList: boolean("show_menu_list").notNull().default(true),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     approvedBy: uuid("approved_by").references(() => users.id, { onDelete: "set null" }),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),

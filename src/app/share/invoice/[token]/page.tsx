@@ -70,6 +70,7 @@ export default async function SharedInvoicePage({
             })),
             notes: invoice.notes,
             terms: invoice.terms,
+            showMenuList: invoice.showMenuList,
           }}
         />
       </div>

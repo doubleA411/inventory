@@ -24,6 +24,7 @@ export type DocOrg = {
   docTitleTop: string;
   signatureUrl: string | null;
   bankName: string | null;
+  bankAccountName: string | null;
   bankAccount: string | null;
   bankIfsc: string | null;
   bankUpi: string | null;
@@ -87,6 +88,7 @@ export type DocData = {
   payments?: DocPayment[]; // invoice only
   notes: string | null;
   terms: string | null;
+  showMenuList?: boolean; // invoice only — defaults to true when omitted
 };
 
 function isImage(url: string | null): boolean {
@@ -268,6 +270,7 @@ export function orgToDocOrg(o: Organization): DocOrg {
     docTitleTop: o.docTitleTop,
     signatureUrl: o.signatureUrl,
     bankName: o.bankName,
+    bankAccountName: o.bankAccountName,
     bankAccount: o.bankAccount,
     bankIfsc: o.bankIfsc,
     bankUpi: o.bankUpi,
@@ -302,7 +305,8 @@ export function DocumentView({
       }
     : {};
 
-  const menuLines = doc.items.filter((it) => it.menuItems?.length);
+  const menuLines =
+    doc.showMenuList === false ? [] : doc.items.filter((it) => it.menuItems?.length);
   const menuPages = chunkMenuLines(menuLines);
   const pricedPages = layoutPricedPages(
     doc.items,
@@ -475,7 +479,7 @@ export function DocumentView({
                       ))}
                     </ol>
                     <div
-                      className="mt-1 border-t border-dotted border-gray-300 pt-1 text-right doc-text-xs font-semibold"
+                      className="mt-1 border-t border-dotted border-gray-300 pt-1 text-left doc-text-xs font-semibold"
                       style={headingStyle}
                     >
                       {fmtMoney(it.rate, cur)}
@@ -560,7 +564,7 @@ export function DocumentView({
             <th className="px-1.5 py-1.5">Description</th>
             <th className="px-1.5 py-1.5">HSN/SAC</th>
             <th className="px-1.5 py-1.5 text-right">Qty</th>
-            <th className="px-1.5 py-1.5 text-right">Rate</th>
+            <th className="px-1.5 py-1.5 text-left">Rate</th>
             {doc.gstEnabled && <th className="px-1.5 py-1.5 text-right">Tax%</th>}
             <th className="px-1.5 py-1.5 text-right">Amount</th>
           </tr>
@@ -574,7 +578,7 @@ export function DocumentView({
               <td className="px-1.5 py-1.5 text-right">
                 {Number(it.quantity)} {it.unit ?? ""}
               </td>
-              <td className="px-1.5 py-1.5 text-right">{fmtMoney(it.rate, cur)}</td>
+              <td className="px-1.5 py-1.5 text-left">{fmtMoney(it.rate, cur)}</td>
               {doc.gstEnabled && (
                 <td className="px-1.5 py-1.5 text-right">{Number(it.taxRate)}%</td>
               )}
@@ -686,6 +690,7 @@ export function DocumentView({
                 Bank details
               </div>
               {org.bankName && <div>Bank: {org.bankName}</div>}
+              {org.bankAccountName && <div>A/c name: {org.bankAccountName}</div>}
               {org.bankAccount && <div>A/c: {org.bankAccount}</div>}
               {org.bankIfsc && <div>IFSC: {org.bankIfsc}</div>}
               {org.bankUpi && <div>UPI: {org.bankUpi}</div>}

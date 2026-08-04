@@ -68,6 +68,7 @@ export default async function InvoicePrintPage({
             })),
             notes: invoice.notes,
             terms: invoice.terms,
+            showMenuList: invoice.showMenuList,
           }}
         />
       </div>

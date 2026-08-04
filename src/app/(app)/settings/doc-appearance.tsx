@@ -34,6 +34,7 @@ const SAMPLE_ORG_BASE = {
   docTitleTop: "40",
   signatureUrl: null,
   bankName: null,
+  bankAccountName: null,
   bankAccount: null,
   bankIfsc: null,
   bankUpi: null,
