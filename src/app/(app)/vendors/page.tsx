@@ -34,6 +34,7 @@ export default async function VendorsPage() {
           phone: v.phone,
           district: v.district,
           location: v.location,
+          openingBalance: v.openingBalance,
           purchased: v.purchased,
           paid: v.paid,
         }))}

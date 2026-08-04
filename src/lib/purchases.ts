@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   purchaseBills,
@@ -230,10 +230,13 @@ export async function recordPurchaseBillPaymentCore(
 
 /**
  * Vendor tracking for the restock quick-path: the stock batch already exists
- * (created by the normal applyMovement restock flow) — this just wraps a
- * one-line purchase bill around it and links back, instead of restocking a
- * second time. Called right after a successful restock when a vendor was
- * picked in the dialog.
+ * (created by the normal applyMovement restock flow) — this just links it
+ * into a purchase bill for the vendor. Restocking several products from the
+ * same vendor on the same day should land as multiple lines on one bill
+ * (matching how a real supplier invoice works), not a separate bill per
+ * product — so this appends to today's still-active bill for that vendor if
+ * one already exists, and only creates a new bill otherwise. Called right
+ * after a successful restock when a vendor was picked in the dialog.
  */
 export async function createPurchaseBillForRestockCore(
   org: Organization,
@@ -250,39 +253,71 @@ export async function createPurchaseBillForRestockCore(
   },
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const amount = round2(input.quantity * input.rate);
+  const billDate = new Date().toISOString().slice(0, 10);
   let billId: string;
   try {
     billId = await db.transaction(async (tx) => {
-      const fy = financialYear();
-      const [last] = await tx
-        .select({ seq: purchaseBills.seq })
+      const [existing] = await tx
+        .select({ id: purchaseBills.id, total: purchaseBills.total, subtotal: purchaseBills.subtotal })
         .from(purchaseBills)
-        .where(and(eq(purchaseBills.organizationId, org.id), eq(purchaseBills.fy, fy)))
-        .orderBy(desc(purchaseBills.seq))
+        .where(
+          and(
+            eq(purchaseBills.organizationId, org.id),
+            eq(purchaseBills.vendorId, input.vendorId),
+            eq(purchaseBills.billDate, billDate),
+            eq(purchaseBills.status, "active"),
+          ),
+        )
+        .orderBy(desc(purchaseBills.createdAt))
         .limit(1);
-      const seq = (last?.seq ?? 0) + 1;
-      const number = formatDocNumber(org.purchaseBillPrefix, fy, seq);
 
-      const [bill] = await tx
-        .insert(purchaseBills)
-        .values({
-          organizationId: org.id,
-          number,
-          seq,
-          fy,
-          vendorId: input.vendorId,
-          billDate: new Date().toISOString().slice(0, 10),
-          subtotal: String(amount),
-          total: String(amount),
-          createdBy: userId,
-        })
-        .returning();
+      let bill: { id: string };
+      let position = 0;
+      if (existing) {
+        bill = existing;
+        const [{ count }] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(purchaseBillItems)
+          .where(eq(purchaseBillItems.purchaseBillId, existing.id));
+        position = count;
+        const newTotal = round2(Number(existing.total) + amount);
+        await tx
+          .update(purchaseBills)
+          .set({ subtotal: String(newTotal), total: String(newTotal) })
+          .where(eq(purchaseBills.id, existing.id));
+      } else {
+        const fy = financialYear();
+        const [last] = await tx
+          .select({ seq: purchaseBills.seq })
+          .from(purchaseBills)
+          .where(and(eq(purchaseBills.organizationId, org.id), eq(purchaseBills.fy, fy)))
+          .orderBy(desc(purchaseBills.seq))
+          .limit(1);
+        const seq = (last?.seq ?? 0) + 1;
+        const number = formatDocNumber(org.purchaseBillPrefix, fy, seq);
+
+        const [created] = await tx
+          .insert(purchaseBills)
+          .values({
+            organizationId: org.id,
+            number,
+            seq,
+            fy,
+            vendorId: input.vendorId,
+            billDate,
+            subtotal: String(amount),
+            total: String(amount),
+            createdBy: userId,
+          })
+          .returning();
+        bill = created;
+      }
 
       const [item] = await tx
         .insert(purchaseBillItems)
         .values({
           purchaseBillId: bill.id,
-          position: 0,
+          position,
           productId: input.productId,
           description: input.description,
           quantity: String(input.quantity),

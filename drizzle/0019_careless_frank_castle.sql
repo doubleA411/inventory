@@ -1,0 +1,1 @@
+ALTER TABLE "vendors" ADD COLUMN "opening_balance" numeric(14, 2) DEFAULT '0' NOT NULL;

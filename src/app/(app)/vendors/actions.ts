@@ -20,6 +20,7 @@ const schema = z.object({
   phone: z.string().trim().optional().nullable(),
   email: z.string().trim().optional().nullable(),
   notes: z.string().trim().optional().nullable(),
+  openingBalance: z.coerce.number().min(0).optional().nullable(),
 });
 
 export type VendorInput = z.infer<typeof schema>;
@@ -44,6 +45,7 @@ export async function saveVendor(
     phone: d.phone || null,
     email: d.email || null,
     notes: d.notes || null,
+    openingBalance: String(d.openingBalance ?? 0),
   };
 
   if (input.id) {

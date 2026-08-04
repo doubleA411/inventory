@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, categories } from "@/lib/db/schema";
 import { requireAuth, requireRole } from "@/lib/auth";
@@ -140,6 +140,57 @@ export async function deleteProductAction(productId: string): Promise<void> {
     );
   revalidatePath("/products");
   redirect("/products");
+}
+
+// --- Bulk actions ------------------------------------------------------
+
+const idsSchema = z.array(z.string().uuid()).min(1, "Select at least one product");
+
+export async function bulkDeleteProductsAction(ids: string[]): Promise<ActionState> {
+  const { organization } = await requireRole("admin");
+  const parsed = idsSchema.safeParse(ids);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  await db
+    .delete(products)
+    .where(
+      and(inArray(products.id, parsed.data), eq(products.organizationId, organization.id)),
+    );
+  revalidatePath("/products");
+  return { ok: true };
+}
+
+export async function bulkSetCategoryAction(
+  ids: string[],
+  categoryId: string | null,
+): Promise<ActionState> {
+  const { organization } = await requireRole("admin");
+  const parsed = idsSchema.safeParse(ids);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  await db
+    .update(products)
+    .set({ categoryId })
+    .where(
+      and(inArray(products.id, parsed.data), eq(products.organizationId, organization.id)),
+    );
+  revalidatePath("/products");
+  return { ok: true };
+}
+
+export async function bulkSetActiveAction(
+  ids: string[],
+  isActive: boolean,
+): Promise<ActionState> {
+  const { organization } = await requireRole("admin");
+  const parsed = idsSchema.safeParse(ids);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  await db
+    .update(products)
+    .set({ isActive })
+    .where(
+      and(inArray(products.id, parsed.data), eq(products.organizationId, organization.id)),
+    );
+  revalidatePath("/products");
+  return { ok: true };
 }
 
 export async function createCategoryAction(name: string): Promise<ActionState> {

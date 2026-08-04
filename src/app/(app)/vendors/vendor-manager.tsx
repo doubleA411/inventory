@@ -13,6 +13,7 @@ type VendorRow = {
   phone: string | null;
   district: string;
   location: string | null;
+  openingBalance: string;
   purchased: string;
   paid: string;
 };
@@ -26,6 +27,8 @@ const empty = {
   pincode: "",
   phone: "",
   email: "",
+  openingBalance: "",
+  notes: "",
 };
 
 export function VendorManager({
@@ -43,7 +46,10 @@ export function VendorManager({
   function save() {
     setError(null);
     start(async () => {
-      const res = await saveVendor(f);
+      const res = await saveVendor({
+        ...f,
+        openingBalance: f.openingBalance ? Number(f.openingBalance) : 0,
+      });
       if (res.ok) {
         setF({ ...empty });
         router.refresh();
@@ -84,7 +90,7 @@ export function VendorManager({
               </thead>
               <tbody className="divide-y divide-(--color-border)">
                 {vendors.map((v) => {
-                  const due = Number(v.purchased) - Number(v.paid);
+                  const due = Number(v.purchased) - Number(v.paid) + Number(v.openingBalance);
                   return (
                     <tr key={v.id} className="hover:bg-(--color-bg)">
                       <td className="px-4 py-3 font-medium">
@@ -134,6 +140,28 @@ export function VendorManager({
           <input className="input" placeholder="Phone" value={f.phone} onChange={set("phone")} />
           <input className="input" placeholder="Email" value={f.email} onChange={set("email")} />
         </div>
+        <div>
+          <label className="mb-1 block text-xs text-(--color-muted)">Opening balance</label>
+          <input
+            className="input"
+            type="number"
+            min={0}
+            step="0.01"
+            placeholder="0.00"
+            value={f.openingBalance}
+            onChange={set("openingBalance")}
+          />
+          <p className="mt-1 text-xs text-(--color-muted)">
+            Amount already owed to this vendor before adding them here.
+          </p>
+        </div>
+        <textarea
+          className="input"
+          rows={2}
+          placeholder="Notes"
+          value={f.notes}
+          onChange={(e) => setF({ ...f, notes: e.target.value })}
+        />
         <p className="text-xs text-(--color-muted)">State: Tamil Nadu — set automatically.</p>
         {error && <p className="text-sm text-(--color-danger)">{error}</p>}
         <button className="btn-primary w-full" onClick={save} disabled={pending || !f.name.trim()}>

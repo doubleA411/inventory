@@ -688,6 +688,11 @@ export const vendors = pgTable(
     phone: text("phone"),
     email: text("email"),
     notes: text("notes"),
+    // Amount already owed to this vendor before they were added to the
+    // system (a carried-over balance), separate from anything billed here.
+    openingBalance: numeric("opening_balance", { precision: 14, scale: 2 })
+      .notNull()
+      .default("0"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("vendors_org_idx").on(t.organizationId)],

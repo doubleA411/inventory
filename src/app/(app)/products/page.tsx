@@ -1,11 +1,9 @@
 import Link from "next/link";
 import { requireAuth, hasRole } from "@/lib/auth";
-import { listProducts } from "@/lib/queries";
-import { PageHeader, Badge, EmptyState } from "@/components/ui";
-import { CostTrendBadge } from "@/components/cost-trend";
+import { listProducts, listCategories } from "@/lib/queries";
+import { PageHeader, EmptyState } from "@/components/ui";
 import { SearchBox } from "@/components/search-box";
-import { ClickableRow, stopRowClick } from "@/components/clickable-row";
-import { fmtQty } from "@/lib/utils";
+import { ProductsTable } from "./products-table";
 import { Plus } from "lucide-react";
 
 export default async function ProductsPage({
@@ -16,10 +14,10 @@ export default async function ProductsPage({
   const { organization, role } = await requireAuth();
   const sp = await searchParams;
   const onlyLow = sp.filter === "low";
-  const products = await listProducts(organization.id, {
-    search: sp.search,
-    onlyLow,
-  });
+  const [products, categories] = await Promise.all([
+    listProducts(organization.id, { search: sp.search, onlyLow }),
+    listCategories(organization.id),
+  ]);
   const canEdit = hasRole(role, "admin");
 
   const reportParams = new URLSearchParams();
@@ -95,71 +93,12 @@ export default async function ProductsPage({
           }
         />
       ) : (
-        <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
-                  <th className="px-4 py-3 font-medium">Product</th>
-                  <th className="px-4 py-3 font-medium">Category</th>
-                  <th className="px-4 py-3 text-right font-medium">In stock</th>
-                  <th className="px-4 py-3 text-right font-medium">Reorder at</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-(--color-border)">
-                {products.map((p) => {
-                  const status =
-                    p.currentStock <= 0
-                      ? { tone: "danger" as const, label: "Out of stock" }
-                      : p.currentStock <= p.reorderLevel
-                        ? { tone: "warn" as const, label: "Low" }
-                        : { tone: "ok" as const, label: "OK" };
-                  return (
-                    <ClickableRow
-                      key={p.id}
-                      href={`/products/${p.id}`}
-                      className="hover:bg-(--color-bg)"
-                    >
-                      <td className="px-4 py-3">
-                        <Link
-                          href={`/products/${p.id}`}
-                          onClick={stopRowClick}
-                          className="font-medium hover:underline"
-                        >
-                          {p.name}
-                        </Link>
-                        {p.code && (
-                          <span className="ml-2 font-mono text-xs text-(--color-muted)">
-                            {p.code}
-                          </span>
-                        )}
-                        <CostTrendBadge
-                          trend={p.costTrend}
-                          currency={organization.currency}
-                          unitSymbol={p.unitSymbol}
-                        />
-                      </td>
-                      <td className="px-4 py-3 text-(--color-muted)">
-                        {p.categoryName ?? "—"}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums font-medium">
-                        {fmtQty(p.currentStock)}{" "}
-                        <span className="text-(--color-muted)">{p.unitSymbol}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-(--color-muted)">
-                        {fmtQty(p.reorderLevel)} {p.unitSymbol}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge tone={status.tone}>{status.label}</Badge>
-                      </td>
-                    </ClickableRow>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <ProductsTable
+          products={products}
+          categories={categories}
+          currency={organization.currency}
+          canEdit={canEdit}
+        />
       )}
     </div>
   );

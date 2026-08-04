@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth";
-import { getVendor, listPurchaseBillsForVendor } from "@/lib/purchase-queries";
+import {
+  getVendor,
+  listPurchaseBillsForVendor,
+  listPaymentsForVendor,
+} from "@/lib/purchase-queries";
 import { PageHeader, Badge } from "@/components/ui";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { ArrowLeft, Plus } from "lucide-react";
@@ -13,9 +17,10 @@ export default async function VendorDetailPage({
 }) {
   const { organization } = await requireRole("admin");
   const { id } = await params;
-  const [vendor, bills] = await Promise.all([
+  const [vendor, bills, payments] = await Promise.all([
     getVendor(organization.id, id),
     listPurchaseBillsForVendor(organization.id, id),
+    listPaymentsForVendor(organization.id, id),
   ]);
   if (!vendor) notFound();
   const cur = organization.currency;
@@ -23,7 +28,8 @@ export default async function VendorDetailPage({
   const activeBills = bills.filter((b) => b.status === "active");
   const purchased = activeBills.reduce((s, b) => s + Number(b.total), 0);
   const paid = activeBills.reduce((s, b) => s + Number(b.amountPaid), 0);
-  const due = purchased - paid;
+  const openingBalance = Number(vendor.openingBalance);
+  const due = purchased - paid + openingBalance;
 
   return (
     <div>
@@ -65,6 +71,11 @@ export default async function VendorDetailPage({
                 </div>
               </div>
             </div>
+            {openingBalance > 0 && (
+              <div className="mt-3 border-t border-(--color-border) pt-2 text-center text-xs text-(--color-muted)">
+                Includes opening balance of {fmtMoney(openingBalance, cur)}
+              </div>
+            )}
           </div>
 
           <div className="card overflow-hidden">
@@ -115,16 +126,65 @@ export default async function VendorDetailPage({
               </div>
             )}
           </div>
+
+          <div className="card overflow-hidden">
+            <div className="border-b border-(--color-border) px-4 py-3 text-sm font-semibold">
+              Payment tracking
+            </div>
+            {payments.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-(--color-muted)">
+                No payments recorded yet. Record a payment from a purchase bill to see it here.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
+                      <th className="px-4 py-2 font-medium">Date paid</th>
+                      <th className="px-4 py-2 text-right font-medium">Amount</th>
+                      <th className="px-4 py-2 font-medium">Bill</th>
+                      <th className="px-4 py-2 font-medium">Method</th>
+                      <th className="px-4 py-2 font-medium">Reference</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-(--color-border)">
+                    {payments.map((p) => (
+                      <tr key={p.id} className="hover:bg-(--color-bg)">
+                        <td className="px-4 py-2.5 text-(--color-muted)">{fmtDate(p.paidAt)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-medium">
+                          {fmtMoney(p.amount, cur)}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <Link href={`/purchase-bills/${p.billId}`} className="hover:underline">
+                            {p.billNumber}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-2.5 text-(--color-muted) capitalize">
+                          {p.method.replace("_", " ")}
+                        </td>
+                        <td className="px-4 py-2.5 text-(--color-muted)">
+                          {p.reference || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="card space-y-2 p-4 text-sm">
           <div className="font-semibold">Vendor details</div>
-          {vendor.gstin && <div className="text-(--color-muted)">GSTIN: {vendor.gstin}</div>}
-          {vendor.addressLine && <div className="text-(--color-muted)">{vendor.addressLine}</div>}
-          {vendor.pincode && <div className="text-(--color-muted)">PIN: {vendor.pincode}</div>}
-          {vendor.phone && <div className="text-(--color-muted)">Ph: {vendor.phone}</div>}
-          {vendor.email && <div className="text-(--color-muted)">{vendor.email}</div>}
-          {vendor.notes && <div className="text-(--color-muted)">{vendor.notes}</div>}
+          <div className="text-(--color-muted)">GSTIN: {vendor.gstin || "—"}</div>
+          <div className="text-(--color-muted)">Address: {vendor.addressLine || "—"}</div>
+          <div className="text-(--color-muted)">PIN: {vendor.pincode || "—"}</div>
+          <div className="text-(--color-muted)">Ph: {vendor.phone || "—"}</div>
+          <div className="text-(--color-muted)">Email: {vendor.email || "—"}</div>
+          <div className="text-(--color-muted)">
+            Opening balance: {fmtMoney(vendor.openingBalance, cur)}
+          </div>
+          <div className="text-(--color-muted)">Notes: {vendor.notes || "—"}</div>
         </div>
       </div>
     </div>

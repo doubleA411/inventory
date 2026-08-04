@@ -32,6 +32,7 @@ export async function listVendors(orgId: string) {
       phone: vendors.phone,
       district: vendors.district,
       location: vendors.location,
+      openingBalance: vendors.openingBalance,
       purchased: sql<string>`coalesce(sum(${purchaseBills.total}), 0)`,
       paid: sql<string>`coalesce(sum(${purchaseBills.amountPaid}), 0)`,
     })
@@ -95,13 +96,43 @@ export async function getPurchaseBillFull(orgId: string, id: string) {
 
 /** Org-wide vendor dues, for the vendors list header. */
 export async function vendorsSummary(orgId: string) {
-  const rows = await db
+  const [rows, openingRows] = await Promise.all([
+    db
+      .select({
+        total: purchaseBills.total,
+        amountPaid: purchaseBills.amountPaid,
+      })
+      .from(purchaseBills)
+      .where(and(eq(purchaseBills.organizationId, orgId), eq(purchaseBills.status, "active"))),
+    db
+      .select({ openingBalance: vendors.openingBalance })
+      .from(vendors)
+      .where(eq(vendors.organizationId, orgId)),
+  ]);
+  const billsDue = rows.reduce((s, r) => s + (Number(r.total) - Number(r.amountPaid)), 0);
+  const openingDue = openingRows.reduce((s, r) => s + Number(r.openingBalance), 0);
+  return { billCount: rows.length, due: billsDue + openingDue };
+}
+
+/** All payments recorded against this vendor's purchase bills, most recent first. */
+export async function listPaymentsForVendor(orgId: string, vendorId: string) {
+  return db
     .select({
-      total: purchaseBills.total,
-      amountPaid: purchaseBills.amountPaid,
+      id: purchaseBillPayments.id,
+      amount: purchaseBillPayments.amount,
+      method: purchaseBillPayments.method,
+      reference: purchaseBillPayments.reference,
+      paidAt: purchaseBillPayments.paidAt,
+      note: purchaseBillPayments.note,
+      billId: purchaseBills.id,
+      billNumber: purchaseBills.number,
+      userName: users.name,
     })
-    .from(purchaseBills)
-    .where(and(eq(purchaseBills.organizationId, orgId), eq(purchaseBills.status, "active")));
-  const due = rows.reduce((s, r) => s + (Number(r.total) - Number(r.amountPaid)), 0);
-  return { billCount: rows.length, due };
+    .from(purchaseBillPayments)
+    .innerJoin(purchaseBills, eq(purchaseBillPayments.purchaseBillId, purchaseBills.id))
+    .leftJoin(users, eq(purchaseBillPayments.createdBy, users.id))
+    .where(
+      and(eq(purchaseBillPayments.organizationId, orgId), eq(purchaseBills.vendorId, vendorId)),
+    )
+    .orderBy(desc(purchaseBillPayments.paidAt));
 }

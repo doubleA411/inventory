@@ -134,6 +134,13 @@
       "when": 1785734046112,
       "tag": "0018_add_product_preferred_vendor",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785831497772,
+      "tag": "0019_careless_frank_castle",
+      "breakpoints": true
     }
   ]
 }
