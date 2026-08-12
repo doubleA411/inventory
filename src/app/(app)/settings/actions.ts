@@ -156,7 +156,7 @@ export async function saveDocAppearance(
     .set({
       docHeadingColor: headingColor,
       docBodyColor: bodyColor,
-      docFontSize: Math.max(10, Math.min(16, Math.round(fontSize))),
+      docFontSize: Math.max(10, Math.min(22, Math.round(fontSize))),
     })
     .where(eq(organizations.id, organization.id));
   revalidatePath("/settings");

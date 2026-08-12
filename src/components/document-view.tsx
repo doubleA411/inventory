@@ -438,12 +438,24 @@ export function DocumentView({
             {!useLetterheadBg && customerBlockContent && (
               <div className="mb-4 doc-text-sm">{customerBlockContent}</div>
             )}
-            <div className="mb-4 flex items-end justify-between">
+            <div className="relative mb-4 flex items-end justify-between">
               <h1 className="doc-text-xl font-bold tracking-wide" style={headingStyle}>
                 Menu
               </h1>
-              {pageItems[0]?.eventDate && (
+              {!useLetterheadBg && pageItems[0]?.eventDate && (
                 <div className="doc-text-sm font-semibold" style={bodyStyle}>
+                  {fmtDate(pageItems[0].eventDate)}
+                </div>
+              )}
+              {useLetterheadBg && pageItems[0]?.eventDate && (
+                // Horizontally centered under the letterhead logo (its
+                // measured midpoint on the RK Caterers letterhead image),
+                // rather than flush with the page's right margin, so it
+                // doesn't run into the logo above.
+                <div
+                  className="absolute bottom-0 whitespace-nowrap doc-text-sm font-semibold"
+                  style={{ ...bodyStyle, left: "158.8mm", transform: "translateX(-50%)" }}
+                >
                   {fmtDate(pageItems[0].eventDate)}
                 </div>
               )}
@@ -479,7 +491,7 @@ export function DocumentView({
                       ))}
                     </ol>
                     <div
-                      className="mt-1 border-t border-dotted border-gray-300 pt-1 text-left doc-text-xs font-semibold"
+                      className="mt-1 border-t border-dotted border-gray-300 pt-1 pl-3 text-left doc-text-xs font-semibold"
                       style={headingStyle}
                     >
                       {fmtMoney(it.rate, cur)}

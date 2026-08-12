@@ -176,7 +176,7 @@ export function DocAppearance({
           <input
             type="range"
             min={10}
-            max={16}
+            max={22}
             value={fontSize}
             onChange={(e) => setFontSize(Number(e.target.value))}
             className="w-full"
