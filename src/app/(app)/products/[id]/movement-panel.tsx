@@ -132,7 +132,7 @@ export function MovementPanel({
             </div>
             <div>
               <label className="label" htmlFor="unitCost">
-                Cost per unit (optional)
+                Cost per unit *
               </label>
               <input
                 id="unitCost"
@@ -140,10 +140,10 @@ export function MovementPanel({
                 type="number"
                 step="any"
                 min="0"
+                required
+                defaultValue={lastCostPrice != null ? String(lastCostPrice) : ""}
                 className="input"
-                placeholder={
-                  lastCostPrice != null ? `Last: ${lastCostPrice}` : "0.00"
-                }
+                placeholder="0.00"
               />
             </div>
           </div>

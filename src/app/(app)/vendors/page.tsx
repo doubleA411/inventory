@@ -1,14 +1,17 @@
 import { requireRole } from "@/lib/auth";
-import { listVendors, vendorsSummary } from "@/lib/purchase-queries";
+import { listVendors, vendorsSummary, listProductsForPicker } from "@/lib/purchase-queries";
+import { listUnits } from "@/lib/queries";
 import { PageHeader, StatCard } from "@/components/ui";
 import { fmtMoney } from "@/lib/utils";
 import { VendorManager } from "./vendor-manager";
 
 export default async function VendorsPage() {
   const { organization } = await requireRole("admin");
-  const [vendors, summary] = await Promise.all([
+  const [vendors, summary, products, units] = await Promise.all([
     listVendors(organization.id),
     vendorsSummary(organization.id),
+    listProductsForPicker(organization.id),
+    listUnits(organization.id),
   ]);
 
   return (
@@ -18,7 +21,7 @@ export default async function VendorsPage() {
         subtitle="Suppliers you buy stock from — track what's owed and what's been paid."
       />
 
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4">
         <StatCard label="Vendors" value={vendors.length} />
         <StatCard
           label="Total due"
@@ -37,6 +40,13 @@ export default async function VendorsPage() {
           openingBalance: v.openingBalance,
           purchased: v.purchased,
           paid: v.paid,
+        }))}
+        products={products.map((p) => ({ id: p.id, name: p.name }))}
+        units={units.map((u) => ({
+          id: u.id,
+          name: u.name,
+          symbol: u.symbol,
+          groupName: u.groupName,
         }))}
         currency={organization.currency}
       />

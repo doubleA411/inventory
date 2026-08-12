@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { requireAuth, hasRole } from "@/lib/auth";
-import { listProducts, listCategories } from "@/lib/queries";
+import { listProducts, listCategories, listUnits } from "@/lib/queries";
+import { listVendors } from "@/lib/purchase-queries";
 import { PageHeader, EmptyState } from "@/components/ui";
 import { SearchBox } from "@/components/search-box";
 import { ProductsTable } from "./products-table";
-import { Plus } from "lucide-react";
+import { ProductCreateSheet } from "./product-create-sheet";
 
 export default async function ProductsPage({
   searchParams,
@@ -14,9 +15,11 @@ export default async function ProductsPage({
   const { organization, role } = await requireAuth();
   const sp = await searchParams;
   const onlyLow = sp.filter === "low";
-  const [products, categories] = await Promise.all([
+  const [products, categories, units, vendors] = await Promise.all([
     listProducts(organization.id, { search: sp.search, onlyLow }),
     listCategories(organization.id),
+    listUnits(organization.id),
+    listVendors(organization.id),
   ]);
   const canEdit = hasRole(role, "admin");
 
@@ -40,9 +43,16 @@ export default async function ProductsPage({
               Export PDF
             </Link>
             {canEdit && (
-              <Link href="/products/new" className="btn-primary">
-                <Plus className="h-4 w-4" /> Add product
-              </Link>
+              <ProductCreateSheet
+                units={units.map((u) => ({
+                  id: u.id,
+                  name: u.name,
+                  symbol: u.symbol,
+                  groupName: u.groupName,
+                }))}
+                categories={categories}
+                vendors={vendors.map((v) => ({ id: v.id, name: v.name }))}
+              />
             )}
           </div>
         }
@@ -82,9 +92,6 @@ export default async function ProductsPage({
           action={
             canEdit && (
               <div className="flex justify-center gap-2">
-                <Link href="/products/new" className="btn-primary">
-                  Add product
-                </Link>
                 <Link href="/import" className="btn-outline">
                   Import CSV/XLSX
                 </Link>

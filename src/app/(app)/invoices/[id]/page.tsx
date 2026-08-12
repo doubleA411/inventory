@@ -3,17 +3,14 @@ import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { getInvoiceFull, displayInvoiceStatus } from "@/lib/billing-queries";
 import { eventExpenseTotal } from "@/lib/expenses";
-import { normalizeIndianMobile } from "@/lib/sharing";
 import { Badge } from "@/components/ui";
 import { ProfitabilityCard } from "@/components/profitability-card";
-import { ShareLink } from "@/components/share-link";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { amountInWords } from "@/lib/tax";
 import { INVOICE_STATUS_META } from "@/lib/labels";
-import { ArrowLeft, Pencil, Printer } from "lucide-react";
+import { ArrowLeft, Download, Pencil, Printer } from "lucide-react";
 import { PaymentForm } from "./payment-form";
 import { InvoiceActions } from "./invoice-actions";
-import { createInvoiceShareLink, revokeInvoiceShareLink } from "../actions";
 
 export default async function InvoiceViewPage({
   params,
@@ -58,17 +55,29 @@ export default async function InvoiceViewPage({
           </div>
           <div className="mt-1 text-sm text-(--color-muted)">
             {gstEnabled ? "Tax Invoice" : "Bill of Supply"} ·{" "}
-            {customer?.name ?? "Walk-in"} · {fmtDate(invoice.issueDate)}
+            {customer ? (
+              <Link href={`/customers/${customer.id}`} className="hover:underline">
+                {customer.name}
+              </Link>
+            ) : (
+              "Walk-in"
+            )}{" "}
+            · {fmtDate(invoice.issueDate)}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {approved ? (
-            <Link href={`/print/invoice/${id}`} className="btn-primary">
-              <Printer className="h-4 w-4" /> Print
-            </Link>
+            <>
+              <Link href={`/print/invoice/${id}`} className="btn-outline">
+                <Printer className="h-4 w-4" /> Print
+              </Link>
+              <a href={`/api/documents/invoice/${id}`} className="btn-primary">
+                <Download className="h-4 w-4" /> Download PDF
+              </a>
+            </>
           ) : (
             <button className="btn-primary" disabled title="Needs owner approval first">
-              <Printer className="h-4 w-4" /> Print
+              <Download className="h-4 w-4" /> Download PDF
             </button>
           )}
           <Link href={`/invoices/${id}/edit`} className="btn-outline">
@@ -82,19 +91,6 @@ export default async function InvoiceViewPage({
           />
         </div>
       </div>
-
-      {approved && (
-        <div className="mb-6">
-          <ShareLink
-            initialToken={invoice.shareToken}
-            shareBasePath="/share/invoice"
-            waMessage={`Hi${customer?.name ? " " + customer.name : ""}, here's your ${gstEnabled ? "invoice" : "bill"} ${invoice.number} from ${organization.name} for ${fmtMoney(invoice.total, cur)}.`}
-            waPhone={normalizeIndianMobile(customer?.phone)}
-            onCreate={createInvoiceShareLink.bind(null, id)}
-            onRevoke={revokeInvoiceShareLink.bind(null, id)}
-          />
-        </div>
-      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Items + totals */}

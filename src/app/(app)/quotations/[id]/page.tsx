@@ -3,15 +3,12 @@ import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { getQuotationFull } from "@/lib/billing-queries";
 import { eventExpenseTotal } from "@/lib/expenses";
-import { normalizeIndianMobile } from "@/lib/sharing";
 import { Badge } from "@/components/ui";
 import { ProfitabilityCard } from "@/components/profitability-card";
-import { ShareLink } from "@/components/share-link";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { QUOTE_STATUS_META } from "@/lib/labels";
-import { ArrowLeft, Pencil, Printer } from "lucide-react";
+import { ArrowLeft, Download, Pencil, Printer } from "lucide-react";
 import { QuoteActions } from "./quote-actions";
-import { createQuotationShareLink, revokeQuotationShareLink } from "../actions";
 
 export default async function QuotationViewPage({
   params,
@@ -48,18 +45,30 @@ export default async function QuotationViewPage({
             <Badge tone={meta.tone}>{meta.label}</Badge>
           </div>
           <div className="mt-1 text-sm text-(--color-muted)">
-            {customer?.name ?? "Walk-in"} · {fmtDate(quotation.issueDate)}
+            {customer ? (
+              <Link href={`/customers/${customer.id}`} className="hover:underline">
+                {customer.name}
+              </Link>
+            ) : (
+              "Walk-in"
+            )}{" "}
+            · {fmtDate(quotation.issueDate)}
             {quotation.validUntil ? ` · valid until ${fmtDate(quotation.validUntil)}` : ""}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {approved ? (
-            <Link href={`/print/quotation/${id}`} className="btn-outline">
-              <Printer className="h-4 w-4" /> Print
-            </Link>
+            <>
+              <Link href={`/print/quotation/${id}`} className="btn-outline">
+                <Printer className="h-4 w-4" /> Print
+              </Link>
+              <a href={`/api/documents/quotation/${id}`} className="btn-primary">
+                <Download className="h-4 w-4" /> Download PDF
+              </a>
+            </>
           ) : (
-            <button className="btn-outline" disabled title="Needs owner approval first">
-              <Printer className="h-4 w-4" /> Print
+            <button className="btn-primary" disabled title="Needs owner approval first">
+              <Download className="h-4 w-4" /> Download PDF
             </button>
           )}
           <Link href={`/quotations/${id}/edit`} className="btn-outline">
@@ -77,19 +86,6 @@ export default async function QuotationViewPage({
           isOwner={isOwner}
         />
       </div>
-
-      {approved && (
-        <div className="mb-6">
-          <ShareLink
-            initialToken={quotation.shareToken}
-            shareBasePath="/share/quotation"
-            waMessage={`Hi${customer?.name ? " " + customer.name : ""}, here's your quotation ${quotation.number} from ${organization.name} for ${fmtMoney(quotation.total, cur)}.`}
-            waPhone={normalizeIndianMobile(customer?.phone)}
-            onCreate={createQuotationShareLink.bind(null, id)}
-            onRevoke={revokeQuotationShareLink.bind(null, id)}
-          />
-        </div>
-      )}
 
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">

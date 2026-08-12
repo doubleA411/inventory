@@ -5,6 +5,7 @@ import path from "node:path";
 
 const BUCKET = "org-assets";
 const BACKUP_BUCKET = "org-backups";
+const DOCUMENT_BUCKET = "org-documents";
 
 function supabaseCreds() {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -235,4 +236,60 @@ export async function deleteBackups(orgId: string, filenames: string[]): Promise
 
   const dir = localBackupDir(orgId);
   await Promise.all(filenames.map((f) => unlink(path.join(dir, f)).catch(() => {})));
+}
+
+// ---------------------------------------------------------------------------
+// Generated documents (invoice/quotation PDFs): private bucket, one file per
+// document number so a given invoice/quotation always overwrites the same
+// key instead of accumulating regenerated copies — easy to find by number
+// without a separate index.
+// ---------------------------------------------------------------------------
+
+let documentBucketReady: Promise<void> | null = null;
+
+function ensureDocumentBucket(creds: { url: string; serviceKey: string }): Promise<void> {
+  if (!documentBucketReady) {
+    documentBucketReady = fetch(`${creds.url}/storage/v1/bucket`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${creds.serviceKey}`,
+        apikey: creds.serviceKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id: DOCUMENT_BUCKET, name: DOCUMENT_BUCKET, public: false }),
+    }).then(() => undefined);
+  }
+  return documentBucketReady;
+}
+
+/**
+ * Saves a generated invoice/quotation PDF at a deterministic key —
+ * `{orgId}/invoices/{number}.pdf` or `{orgId}/quotations/{number}.pdf` —
+ * so re-downloading the same document overwrites its one file rather than
+ * piling up copies.
+ */
+export async function saveDocument(key: string, pdf: Buffer): Promise<void> {
+  const creds = supabaseCreds();
+  if (creds) {
+    await ensureDocumentBucket(creds);
+    const res = await fetch(`${creds.url}/storage/v1/object/${DOCUMENT_BUCKET}/${key}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${creds.serviceKey}`,
+        apikey: creds.serviceKey,
+        "Content-Type": "application/pdf",
+        "x-upsert": "true",
+      },
+      body: new Uint8Array(pdf),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`Document upload failed (${res.status}): ${detail.slice(0, 200)}`);
+    }
+    return;
+  }
+
+  const abs = path.join(process.cwd(), ".data", "documents", key);
+  await mkdir(path.dirname(abs), { recursive: true });
+  await writeFile(abs, pdf);
 }

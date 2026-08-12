@@ -5,7 +5,6 @@ import { getPurchaseBillFull } from "@/lib/purchase-queries";
 import { Badge } from "@/components/ui";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { ArrowLeft, Printer } from "lucide-react";
-import { PurchaseBillPaymentForm } from "./payment-form";
 import { PurchaseBillActions } from "./purchase-bill-actions";
 
 export default async function PurchaseBillViewPage({
@@ -127,20 +126,26 @@ export default async function PurchaseBillViewPage({
             </div>
           </div>
 
-          {due > 0 && !cancelled && (
-            <div className="card p-4">
-              <div className="mb-3 text-sm font-semibold">Record a payment</div>
-              <PurchaseBillPaymentForm purchaseBillId={id} due={due} />
-            </div>
-          )}
-
           <div className="card">
             <div className="border-b border-(--color-border) px-4 py-3 text-sm font-semibold">
               Payment history
             </div>
             {payments.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm text-(--color-muted)">
-                No payments recorded.
+                {due > 0 && !cancelled ? (
+                  <>
+                    No payments recorded.{" "}
+                    {vendor ? (
+                      <Link href={`/vendors/${vendor.id}`} className="hover:underline">
+                        Record one from {vendor.name}&rsquo;s page.
+                      </Link>
+                    ) : (
+                      "Payments are recorded from the vendor's page."
+                    )}
+                  </>
+                ) : (
+                  "No payments recorded."
+                )}
               </div>
             ) : (
               <div className="divide-y divide-(--color-border)">

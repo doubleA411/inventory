@@ -7,8 +7,15 @@ import { db } from "@/lib/db";
 import { customers } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
 import { stateNameByCode, TAMIL_NADU_CODE } from "@/lib/india-states";
+import { findCustomerByPhone } from "@/lib/billing-queries";
 
-export type CustomerState = { error?: string; ok?: boolean; id?: string };
+export type CustomerState = {
+  error?: string;
+  ok?: boolean;
+  id?: string;
+  /** Another customer already has this phone number; caller can offer to reuse it or save anyway. */
+  duplicate?: { id: string; name: string };
+};
 
 const schema = z.object({
   name: z.string().trim().min(1, "Customer name is required"),
@@ -17,8 +24,10 @@ const schema = z.object({
   district: z.string().trim().optional(),
   location: z.string().trim().optional().nullable(),
   pincode: z.string().trim().optional().nullable(),
-  phone: z.string().trim().optional().nullable(),
+  phone: z.string().trim().min(1, "Phone number is required"),
   email: z.string().trim().optional().nullable(),
+  /** Set once the caller has seen the duplicate warning and wants to save anyway. */
+  confirmDuplicate: z.boolean().optional(),
 });
 
 export type CustomerInput = z.infer<typeof schema>;
@@ -43,6 +52,13 @@ export async function saveCustomer(
     phone: d.phone || null,
     email: d.email || null,
   };
+
+  if (values.phone && !d.confirmDuplicate) {
+    const existing = await findCustomerByPhone(organization.id, values.phone, input.id);
+    if (existing) {
+      return { duplicate: { id: existing.id, name: existing.name } };
+    }
+  }
 
   if (input.id) {
     await db

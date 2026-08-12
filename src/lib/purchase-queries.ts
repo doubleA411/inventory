@@ -114,7 +114,11 @@ export async function vendorsSummary(orgId: string) {
   return { billCount: rows.length, due: billsDue + openingDue };
 }
 
-/** All payments recorded against this vendor's purchase bills, most recent first. */
+/**
+ * All payments recorded for this vendor, most recent first — keyed directly
+ * on the payment's own vendorId (set at recording time) rather than via the
+ * bill, so unassigned advance/credit rows (no bill) still show up.
+ */
 export async function listPaymentsForVendor(orgId: string, vendorId: string) {
   return db
     .select({
@@ -129,10 +133,10 @@ export async function listPaymentsForVendor(orgId: string, vendorId: string) {
       userName: users.name,
     })
     .from(purchaseBillPayments)
-    .innerJoin(purchaseBills, eq(purchaseBillPayments.purchaseBillId, purchaseBills.id))
+    .leftJoin(purchaseBills, eq(purchaseBillPayments.purchaseBillId, purchaseBills.id))
     .leftJoin(users, eq(purchaseBillPayments.createdBy, users.id))
     .where(
-      and(eq(purchaseBillPayments.organizationId, orgId), eq(purchaseBills.vendorId, vendorId)),
+      and(eq(purchaseBillPayments.organizationId, orgId), eq(purchaseBillPayments.vendorId, vendorId)),
     )
     .orderBy(desc(purchaseBillPayments.paidAt));
 }

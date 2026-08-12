@@ -196,6 +196,9 @@ export function ProductForm({
             className="input"
             placeholder="Optional"
           />
+          <p className="mt-1 text-xs text-(--color-muted)">
+            Required below if you log a purchase from a vendor.
+          </p>
         </div>
 
         <div>

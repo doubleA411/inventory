@@ -17,6 +17,7 @@
   --color-ok-soft: #e7f6ec;
   --font-sans: var(--font-geist-sans), var(--font-tamil), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 html,
@@ -37,7 +38,14 @@ body {
   .btn-outline,
   .btn-danger,
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors cursor-pointer;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-[color,background-color,border-color,transform] duration-150 ease-[var(--ease-out)] cursor-pointer;
+  }
+  .btn:active,
+  .btn-primary:active,
+  .btn-outline:active,
+  .btn-danger:active,
+  .btn-ghost:active {
+    transform: scale(0.97);
   }
   .btn:disabled,
   .btn-primary:disabled,
@@ -95,6 +103,30 @@ body {
   }
   .badge {
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+}
+
+/* ---- Slide-in side sheet ---- */
+@keyframes sheet-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes sheet-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+.sheet-backdrop {
+  animation: sheet-fade-in 0.18s var(--ease-out);
+}
+.sheet-panel {
+  animation: sheet-slide-in 0.22s var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet-backdrop,
+  .sheet-panel {
+    animation: none;
   }
 }
 

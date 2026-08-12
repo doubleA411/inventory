@@ -148,6 +148,13 @@
       "when": 1785837161077,
       "tag": "0020_bouncy_blue_shield",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786452746593,
+      "tag": "0021_gifted_ozymandias",
+      "breakpoints": true
     }
   ]
 }

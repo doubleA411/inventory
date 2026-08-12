@@ -96,24 +96,39 @@ export function AppShell({
       </aside>
 
       {/* Mobile drawer */}
-      {open && (
-        <div className="fixed inset-0 z-40 md:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <aside className="absolute left-0 top-0 flex h-full w-64 flex-col bg-(--color-surface) shadow-xl">
-            <div className="flex items-center justify-between border-b border-(--color-border)">
-              <Brand orgName={orgName} orgLogoUrl={orgLogoUrl} border={false} />
-              <button className="btn-ghost mr-2" onClick={() => setOpen(false)} aria-label="Close menu">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <nav className="flex-1 space-y-1 px-3 py-4">{links}</nav>
-            <div className="px-3 pb-1">
-              <TourLauncher />
-            </div>
-            <UserFooter userName={userName} role={role} />
-          </aside>
-        </div>
-      )}
+      <div
+        className={cn(
+          "fixed inset-0 z-40 md:hidden",
+          !open && "pointer-events-none",
+        )}
+        aria-hidden={!open}
+      >
+        <div
+          className={cn(
+            "absolute inset-0 bg-black/40 transition-opacity duration-200 ease-[var(--ease-out)]",
+            open ? "opacity-100" : "opacity-0",
+          )}
+          onClick={() => setOpen(false)}
+        />
+        <aside
+          className={cn(
+            "absolute left-0 top-0 flex h-full w-64 flex-col bg-(--color-surface) shadow-xl transition-transform duration-200 ease-[var(--ease-out)]",
+            open ? "translate-x-0" : "-translate-x-full",
+          )}
+        >
+          <div className="flex items-center justify-between border-b border-(--color-border)">
+            <Brand orgName={orgName} orgLogoUrl={orgLogoUrl} border={false} />
+            <button className="btn-ghost mr-2" onClick={() => setOpen(false)} aria-label="Close menu">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <nav className="flex-1 space-y-1 px-3 py-4">{links}</nav>
+          <div className="px-3 pb-1">
+            <TourLauncher />
+          </div>
+          <UserFooter userName={userName} role={role} />
+        </aside>
+      </div>
 
       {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col">

@@ -24,7 +24,16 @@ export default async function EditInvoicePage({
       <PageHeader title={`Edit ${invoice.number}`} />
       <DocEditor
         kind="invoice"
-        customers={customers.map((c) => ({ id: c.id, name: c.name, stateCode: c.stateCode }))}
+        customers={customers.map((c) => ({
+          id: c.id,
+          name: c.name,
+          phone: c.phone,
+          stateCode: c.stateCode,
+          gstin: c.gstin,
+          district: c.district,
+          location: c.location,
+          email: c.email,
+        }))}
         orgStateCode={o.stateCode}
         gstEnabled={o.gstRegistered}
         defaultTaxRate={o.defaultTaxRate}

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { recordPurchaseBillPayment } from "../actions";
+import { recordVendorPayment } from "../actions";
 
 const METHODS = [
   { value: "cash", label: "Cash" },
@@ -13,19 +13,11 @@ const METHODS = [
   { value: "other", label: "Other" },
 ] as const;
 
-export function PurchaseBillPaymentForm({
-  purchaseBillId,
-  due,
-}: {
-  purchaseBillId: string;
-  due: number;
-}) {
+export function VendorPaymentForm({ vendorId, due }: { vendorId: string; due: number }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [amount, setAmount] = useState(due > 0 ? String(due) : "");
-  // Same fix as the invoice payment form: reset to the live due balance
-  // whenever it changes, instead of leaving the last-typed amount behind.
   const [prevDue, setPrevDue] = useState(due);
   if (due !== prevDue) {
     setPrevDue(due);
@@ -38,8 +30,8 @@ export function PurchaseBillPaymentForm({
   function submit() {
     setError(null);
     startTransition(async () => {
-      const res = await recordPurchaseBillPayment({
-        purchaseBillId,
+      const res = await recordVendorPayment({
+        vendorId,
         amount: Number(amount),
         method,
         reference: reference || null,
@@ -101,6 +93,9 @@ export function PurchaseBillPaymentForm({
           />
         </div>
       </div>
+      <p className="text-xs text-(--color-muted)">
+        Applied automatically to the oldest unpaid bills first.
+      </p>
       {error && <p className="text-sm text-(--color-danger)">{error}</p>}
       <button className="btn-primary w-full" onClick={submit} disabled={pending}>
         {pending ? "Recording…" : "Record payment"}

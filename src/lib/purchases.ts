@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   purchaseBills,
@@ -10,6 +10,7 @@ import {
   stockMovements,
   products,
   units,
+  vendors,
   type Organization,
 } from "@/lib/db/schema";
 import { applyMovement } from "@/lib/stock";
@@ -179,50 +180,120 @@ export async function deletePurchaseBillCore(orgId: string, id: string): Promise
     .where(and(eq(purchaseBills.id, id), eq(purchaseBills.organizationId, orgId)));
 }
 
-const purchaseBillPaymentSchema = z.object({
-  purchaseBillId: z.string().uuid(),
+const vendorPaymentSchema = z.object({
+  vendorId: z.string().uuid(),
   amount: z.coerce.number().positive("Enter an amount greater than 0"),
   method: z.enum(["cash", "upi", "bank_transfer", "cheque", "card", "other"]),
   reference: z.string().trim().optional().nullable(),
   paidAt: z.string().optional().nullable(),
   note: z.string().trim().optional().nullable(),
 });
-export type PurchaseBillPaymentInput = z.infer<typeof purchaseBillPaymentSchema>;
+export type VendorPaymentInput = z.infer<typeof vendorPaymentSchema>;
 
-export async function recordPurchaseBillPaymentCore(
+/**
+ * Records one payment against a vendor as a whole rather than a specific
+ * bill — the amount is auto-allocated across that vendor's active bills
+ * with a balance due, oldest first, so staff can just say "I paid them
+ * ₹5,000" without hunting down which bill it was for. Any amount left over
+ * once every open bill is cleared is kept as an unassigned advance/credit
+ * row (purchaseBillId null), so it isn't lost and shows up in their history.
+ */
+export async function recordVendorPaymentCore(
   orgId: string,
   userId: string,
-  raw: PurchaseBillPaymentInput,
+  raw: VendorPaymentInput,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const parsed = purchaseBillPaymentSchema.safeParse(raw);
+  const parsed = vendorPaymentSchema.safeParse(raw);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const d = parsed.data;
 
-  const [bill] = await db
-    .select()
-    .from(purchaseBills)
-    .where(and(eq(purchaseBills.id, d.purchaseBillId), eq(purchaseBills.organizationId, orgId)))
-    .limit(1);
-  if (!bill) return { ok: false, error: "Purchase bill not found." };
-
   await db.transaction(async (tx) => {
-    await tx.insert(purchaseBillPayments).values({
-      organizationId: orgId,
-      purchaseBillId: d.purchaseBillId,
-      amount: String(d.amount),
-      method: d.method,
-      reference: d.reference || null,
-      paidAt: d.paidAt || undefined,
-      note: d.note || null,
-      createdBy: userId,
-    });
-    const newPaid = Number(bill.amountPaid) + d.amount;
-    await tx
-      .update(purchaseBills)
-      .set({ amountPaid: String(newPaid) })
-      .where(eq(purchaseBills.id, d.purchaseBillId));
+    const openBills = await tx
+      .select()
+      .from(purchaseBills)
+      .where(
+        and(
+          eq(purchaseBills.organizationId, orgId),
+          eq(purchaseBills.vendorId, d.vendorId),
+          eq(purchaseBills.status, "active"),
+        ),
+      )
+      .orderBy(asc(purchaseBills.billDate), asc(purchaseBills.createdAt));
+
+    let remaining = d.amount;
+    for (const bill of openBills) {
+      if (remaining <= 0) break;
+      const due = round2(Number(bill.total) - Number(bill.amountPaid));
+      if (due <= 0) continue;
+      const chunk = Math.min(due, remaining);
+      remaining = round2(remaining - chunk);
+
+      await tx.insert(purchaseBillPayments).values({
+        organizationId: orgId,
+        vendorId: d.vendorId,
+        purchaseBillId: bill.id,
+        amount: String(chunk),
+        method: d.method,
+        reference: d.reference || null,
+        paidAt: d.paidAt || undefined,
+        note: d.note || null,
+        createdBy: userId,
+      });
+      await tx
+        .update(purchaseBills)
+        .set({ amountPaid: String(round2(Number(bill.amountPaid) + chunk)) })
+        .where(eq(purchaseBills.id, bill.id));
+    }
+
+    // Anything left after clearing every open bill goes toward the vendor's
+    // carried-over opening balance next, so "due" on the vendor page (which
+    // includes it) actually reflects the payment instead of staying stuck.
+    if (remaining > 0) {
+      const [vendor] = await tx
+        .select({ openingBalance: vendors.openingBalance })
+        .from(vendors)
+        .where(and(eq(vendors.id, d.vendorId), eq(vendors.organizationId, orgId)))
+        .limit(1);
+      const openingDue = round2(Number(vendor?.openingBalance ?? 0));
+      if (openingDue > 0) {
+        const chunk = Math.min(openingDue, remaining);
+        remaining = round2(remaining - chunk);
+        await tx
+          .update(vendors)
+          .set({ openingBalance: String(round2(openingDue - chunk)) })
+          .where(eq(vendors.id, d.vendorId));
+        await tx.insert(purchaseBillPayments).values({
+          organizationId: orgId,
+          vendorId: d.vendorId,
+          purchaseBillId: null,
+          amount: String(chunk),
+          method: d.method,
+          reference: d.reference || null,
+          paidAt: d.paidAt || undefined,
+          note: [d.note, "Applied to opening balance"].filter(Boolean).join(" — ") || null,
+          createdBy: userId,
+        });
+      }
+    }
+
+    // True surplus beyond every known due — kept as an unassigned
+    // advance/credit row (no bill) so it's visible in payment history
+    // rather than silently discarded, and can be reasoned about later.
+    if (remaining > 0) {
+      await tx.insert(purchaseBillPayments).values({
+        organizationId: orgId,
+        vendorId: d.vendorId,
+        purchaseBillId: null,
+        amount: String(remaining),
+        method: d.method,
+        reference: d.reference || null,
+        paidAt: d.paidAt || undefined,
+        note: d.note || null,
+        createdBy: userId,
+      });
+    }
   });
 
   return { ok: true };
@@ -339,11 +410,30 @@ export async function createPurchaseBillForRestockCore(
   }
 
   if (input.paidNow && input.paidNow > 0) {
-    await recordPurchaseBillPaymentCore(org.id, userId, {
-      purchaseBillId: billId,
-      amount: input.paidNow,
-      method: "cash",
-      paidAt: new Date().toISOString().slice(0, 10),
+    // Applied straight to this specific bill (not the general vendor
+    // allocator) — the caller just created/appended to it and knows exactly
+    // which bill "paid now" refers to, so there's no ambiguity to resolve.
+    const paidNow = input.paidNow;
+    await db.transaction(async (tx) => {
+      const [bill] = await tx
+        .select({ amountPaid: purchaseBills.amountPaid })
+        .from(purchaseBills)
+        .where(eq(purchaseBills.id, billId))
+        .limit(1);
+      if (!bill) return;
+      await tx.insert(purchaseBillPayments).values({
+        organizationId: org.id,
+        vendorId: input.vendorId,
+        purchaseBillId: billId,
+        amount: String(paidNow),
+        method: "cash",
+        paidAt: new Date().toISOString().slice(0, 10),
+        createdBy: userId,
+      });
+      await tx
+        .update(purchaseBills)
+        .set({ amountPaid: String(round2(Number(bill.amountPaid) + paidNow)) })
+        .where(eq(purchaseBills.id, billId));
     });
   }
 

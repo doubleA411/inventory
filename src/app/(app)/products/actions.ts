@@ -46,6 +46,9 @@ async function maybeRestockFromProductForm(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const { restockQty, restockPaidNow } = parsed.data;
   if (!restockQty || restockQty <= 0 || !preferredVendorId) return;
+  if (costPrice == null) {
+    return { error: "Cost price is required to log a purchase." };
+  }
 
   const result = await restockWithVendor(organization, userId, {
     productId,
@@ -61,38 +64,31 @@ async function maybeRestockFromProductForm(
   revalidatePath("/movements");
 }
 
-export async function createProductAction(
-  _prev: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  const { organization, user } = await requireRole("admin");
-  const parsed = productSchema.safeParse({
-    name: formData.get("name"),
-    code: str(formData.get("code")),
-    categoryId: str(formData.get("categoryId")),
-    stockUnitId: formData.get("stockUnitId"),
-    reorderLevel: formData.get("reorderLevel") || 0,
-    costPrice: str(formData.get("costPrice")),
-    preferredVendorId: str(formData.get("preferredVendorId")),
-    notes: str(formData.get("notes")),
-  });
+/**
+ * Non-redirecting create, for the "Add product" drawer on the products
+ * list — the drawer stays open on error and just closes + refreshes on
+ * success, so it can't use the redirect-on-success form-action pattern the
+ * edit page's ProductForm relies on.
+ */
+export async function createProductQuick(input: {
+  name: string;
+  code?: string | null;
+  categoryId?: string | null;
+  stockUnitId: string;
+  reorderLevel?: number;
+  costPrice?: number | null;
+  preferredVendorId?: string | null;
+  notes?: string | null;
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const { organization } = await requireRole("admin");
+  const parsed = productSchema.safeParse(input);
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const result = await createProduct(organization.id, parsed.data);
-  if (!result.ok) return { error: result.error };
-  const restock = await maybeRestockFromProductForm(
-    organization,
-    user.id,
-    result.id,
-    parsed.data.stockUnitId,
-    parsed.data.preferredVendorId,
-    parsed.data.costPrice,
-    formData,
-  );
-  if (restock?.error) return { error: restock.error };
+  if (!result.ok) return result;
   revalidatePath("/products");
-  redirect("/products");
+  return { ok: true, id: result.id };
 }
 
 export async function updateProductAction(
@@ -204,25 +200,38 @@ export async function createCategoryAction(name: string): Promise<ActionState> {
   } catch {
     return { error: "Category already exists" };
   }
-  revalidatePath("/products/new");
+  revalidatePath("/products");
   return { ok: true };
 }
 
 // --- Stock movements --------------------------------------------------------
 
-const movementSchema = z.object({
-  productId: z.string().uuid(),
-  type: z.enum(["restock", "usage", "waste", "adjustment"]),
-  quantity: z.coerce.number().positive("Enter a quantity greater than 0"),
-  unitId: z.string().uuid("Choose a unit"),
-  direction: z.enum(["increase", "decrease"]).optional(),
-  expiryDate: z.string().optional().nullable(),
-  unitCost: z.coerce.number().min(0).optional().nullable(),
-  note: z.string().trim().optional().nullable(),
-  invoiceId: z.string().uuid().optional().nullable(),
-  vendorId: z.string().uuid().optional().nullable(),
-  paidNow: z.coerce.number().min(0).optional().nullable(),
-});
+const movementSchema = z
+  .object({
+    productId: z.string().uuid(),
+    type: z.enum(["restock", "usage", "waste", "adjustment"]),
+    quantity: z.coerce.number().positive("Enter a quantity greater than 0"),
+    unitId: z.string().uuid("Choose a unit"),
+    direction: z.enum(["increase", "decrease"]).optional(),
+    expiryDate: z.string().optional().nullable(),
+    unitCost: z.coerce.number().min(0).optional().nullable(),
+    note: z.string().trim().optional().nullable(),
+    invoiceId: z.string().uuid().optional().nullable(),
+    vendorId: z.string().uuid().optional().nullable(),
+    paidNow: z.coerce.number().min(0).optional().nullable(),
+  })
+  .superRefine((d, ctx) => {
+    // A restock without a cost silently corrupts the batch's valuation (and
+    // any usage/waste later drawn from it) — see src/lib/stock.ts's blended
+    // cost math — so this can't be left to a "last cost" placeholder.
+    if (d.type === "restock" && (d.unitCost == null || Number.isNaN(d.unitCost))) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["unitCost"],
+        message: "Enter the cost per unit for this restock.",
+      });
+    }
+  });
 
 export async function logMovementAction(
   _prev: ActionState,

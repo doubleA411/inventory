@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   customers,
@@ -26,6 +26,63 @@ export async function getCustomer(orgId: string, id: string) {
     .where(and(eq(customers.id, id), eq(customers.organizationId, orgId)))
     .limit(1);
   return c ?? null;
+}
+
+/**
+ * Finds another customer in this org already using this phone number, so
+ * callers can offer "use existing customer" instead of silently creating a
+ * duplicate. Excludes `excludeId` so editing a customer doesn't flag itself.
+ */
+export async function findCustomerByPhone(
+  orgId: string,
+  phone: string,
+  excludeId?: string,
+) {
+  const conds = [eq(customers.organizationId, orgId), eq(customers.phone, phone)];
+  if (excludeId) conds.push(ne(customers.id, excludeId));
+  const [c] = await db
+    .select({ id: customers.id, name: customers.name })
+    .from(customers)
+    .where(and(...conds))
+    .limit(1);
+  return c ?? null;
+}
+
+/** All quotations for one customer, most recent first — for the customer detail page. */
+export async function listQuotationsForCustomer(orgId: string, customerId: string) {
+  return db
+    .select()
+    .from(quotations)
+    .where(and(eq(quotations.customerId, customerId), eq(quotations.organizationId, orgId)))
+    .orderBy(desc(quotations.createdAt));
+}
+
+/** All invoices for one customer, most recent first — for the customer detail page. */
+export async function listInvoicesForCustomer(orgId: string, customerId: string) {
+  return db
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.customerId, customerId), eq(invoices.organizationId, orgId)))
+    .orderBy(desc(invoices.createdAt));
+}
+
+/** All payments recorded against this customer's invoices, most recent first. */
+export async function listPaymentsForCustomer(orgId: string, customerId: string) {
+  return db
+    .select({
+      id: payments.id,
+      amount: payments.amount,
+      method: payments.method,
+      reference: payments.reference,
+      paidAt: payments.paidAt,
+      note: payments.note,
+      invoiceId: invoices.id,
+      invoiceNumber: invoices.number,
+    })
+    .from(payments)
+    .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
+    .where(and(eq(invoices.customerId, customerId), eq(payments.organizationId, orgId)))
+    .orderBy(desc(payments.paidAt));
 }
 
 export async function listQuotations(

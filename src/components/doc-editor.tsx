@@ -10,6 +10,7 @@ import {
   Pencil,
   Plus,
   GripVertical,
+  Search,
   Trash2,
   UserPlus,
 } from "lucide-react";
@@ -17,8 +18,18 @@ import { computeTotals } from "@/lib/tax";
 import { fmtMoney, cn } from "@/lib/utils";
 import { saveCustomer } from "@/app/(app)/customers/actions";
 import { TAMIL_NADU_CODE } from "@/lib/india-states";
+import { Sheet } from "@/components/sheet";
 
-type CustomerLite = { id: string; name: string; stateCode: string | null };
+type CustomerLite = {
+  id: string;
+  name: string;
+  phone: string | null;
+  stateCode: string | null;
+  gstin?: string | null;
+  district?: string | null;
+  location?: string | null;
+  email?: string | null;
+};
 type ItemRow = {
   key: string;
   description: string;
@@ -151,15 +162,55 @@ export function DocEditor({
     });
   }
 
-  // Inline new-customer form.
+  // Inline add/edit-customer form — same Sheet serves both; ncEditingId
+  // tracks which mode (null = adding a new customer).
   const [showNewCust, setShowNewCust] = useState(false);
-  const [nc, setNc] = useState({ name: "", gstin: "", district: "Chennai", location: "", phone: "" });
+  const [ncEditingId, setNcEditingId] = useState<string | null>(null);
+  const [nc, setNc] = useState({
+    name: "",
+    gstin: "",
+    district: "Chennai",
+    location: "",
+    phone: "",
+    email: "",
+  });
+  const [ncDuplicate, setNcDuplicate] = useState<{ id: string; name: string } | null>(null);
   const [custList, setCustList] = useState(customers);
 
   const selectedCust = custList.find((c) => c.id === customerId);
   const intraState = selectedCust?.stateCode
     ? selectedCust.stateCode === orgStateCode
     : true;
+
+  // Customer search — type-to-find by name or phone instead of scrolling a
+  // long dropdown, which is what staff actually have to do with 100+ customers.
+  const [custQuery, setCustQuery] = useState(selectedCust?.name ?? "");
+  const [custOpen, setCustOpen] = useState(false);
+  const custMatches = useMemo(() => {
+    const q = custQuery.trim().toLowerCase();
+    const list = q
+      ? custList.filter(
+          (c) => c.name.toLowerCase().includes(q) || (c.phone ?? "").includes(q),
+        )
+      : custList;
+    return list.slice(0, 8);
+  }, [custList, custQuery]);
+
+  function selectCustomer(c: CustomerLite | null) {
+    setCustomerId(c?.id ?? "");
+    setCustQuery(c?.name ?? "");
+    setCustOpen(false);
+  }
+  function closeCustDropdown() {
+    // Let a click on a dropdown row register (via onMouseDown) before the
+    // input's blur fires, then snap the visible text back to whatever is
+    // actually selected — so a search that wasn't turned into a pick doesn't
+    // silently leave stale text behind.
+    setTimeout(() => {
+      setCustOpen(false);
+      setCustQuery(custList.find((c) => c.id === customerId)?.name ?? "");
+    }, 120);
+  }
 
   const totals = useMemo(
     () =>
@@ -174,6 +225,21 @@ export function DocEditor({
     [rows, effectiveGst, intraState],
   );
 
+  // Every row with a description is a real line the customer will be
+  // charged for, so it must carry a quantity, unit, and rate — not just
+  // the first row someone happened to fill in. Rows with no description at
+  // all are still ignored (that's how a fresh blank row starts out) and get
+  // dropped server-side too (billing.ts filters on description the same way).
+  const hasValidItems = useMemo(() => {
+    const withDescription = rows.filter((r) => r.description.trim());
+    return (
+      withDescription.length > 0 &&
+      withDescription.every(
+        (r) => Number(r.quantity) > 0 && r.unit.trim() && Number(r.rate) > 0,
+      )
+    );
+  }, [rows]);
+
   function updateRow(key: string, patch: Partial<ItemRow>) {
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
@@ -187,28 +253,77 @@ export function DocEditor({
     setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.key !== key) : rs));
   }
 
-  async function addCustomer() {
-    if (!nc.name.trim()) return;
+  async function addCustomer(confirmDuplicate = false) {
+    if (!nc.name.trim() || !nc.phone.trim()) return;
+    setNcDuplicate(null);
     const res = await saveCustomer({
+      id: ncEditingId ?? undefined,
       name: nc.name,
       gstin: nc.gstin || null,
       district: nc.district || "Chennai",
       location: nc.location || null,
-      phone: nc.phone || null,
+      phone: nc.phone,
+      email: nc.email || null,
+      confirmDuplicate,
     });
     if (res.ok && res.id) {
-      const added = { id: res.id, name: nc.name, stateCode: TAMIL_NADU_CODE };
-      setCustList((l) => [...l, added].sort((a, b) => a.name.localeCompare(b.name)));
-      setCustomerId(res.id);
+      const saved: CustomerLite = {
+        id: res.id,
+        name: nc.name,
+        phone: nc.phone,
+        stateCode: TAMIL_NADU_CODE,
+        gstin: nc.gstin || null,
+        district: nc.district || "Chennai",
+        location: nc.location || null,
+        email: nc.email || null,
+      };
+      setCustList((l) =>
+        [...l.filter((c) => c.id !== saved.id), saved].sort((a, b) =>
+          a.name.localeCompare(b.name),
+        ),
+      );
+      selectCustomer(saved);
       setShowNewCust(false);
-      setNc({ name: "", gstin: "", district: "Chennai", location: "", phone: "" });
+      setNc({ name: "", gstin: "", district: "Chennai", location: "", phone: "", email: "" });
+    } else if (res.duplicate) {
+      setNcDuplicate(res.duplicate);
     } else {
-      setError(res.error ?? "Could not add customer");
+      setError(res.error ?? "Could not save customer");
     }
+  }
+
+  function openNewCustomer(prefillName = "") {
+    setNcEditingId(null);
+    setNc({ name: prefillName, gstin: "", district: "Chennai", location: "", phone: "", email: "" });
+    setNcDuplicate(null);
+    setShowNewCust(true);
+    setCustOpen(false);
+  }
+
+  function openEditCustomer() {
+    if (!selectedCust) return;
+    setNcEditingId(selectedCust.id);
+    setNc({
+      name: selectedCust.name,
+      gstin: selectedCust.gstin ?? "",
+      district: selectedCust.district ?? "Chennai",
+      location: selectedCust.location ?? "",
+      phone: selectedCust.phone ?? "",
+      email: selectedCust.email ?? "",
+    });
+    setNcDuplicate(null);
+    setShowNewCust(true);
+    setCustOpen(false);
   }
 
   function onSave() {
     setError(null);
+    if (!hasValidItems) {
+      setError(
+        "Every line item needs a description, quantity, unit, and rate — check the highlighted rows.",
+      );
+      return;
+    }
     const payload =
       kind === "invoice"
         ? {
@@ -272,22 +387,83 @@ export function DocEditor({
           <div className="sm:col-span-1">
             <label className="label">Customer</label>
             <div className="flex gap-2">
-              <select
-                className="input"
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-              >
-                <option value="">— Select / walk-in —</option>
-                {custList.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--color-muted)" />
+                <input
+                  className="input pl-9"
+                  placeholder="Search name or phone, or leave blank for walk-in"
+                  value={custQuery}
+                  onFocus={() => setCustOpen(true)}
+                  onChange={(e) => {
+                    setCustQuery(e.target.value);
+                    setCustOpen(true);
+                  }}
+                  onBlur={closeCustDropdown}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") closeCustDropdown();
+                  }}
+                />
+                {custOpen && (
+                  <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-(--color-border) bg-(--color-surface) shadow-lg">
+                    <button
+                      type="button"
+                      className="block w-full px-3 py-2 text-left text-sm text-(--color-muted) hover:bg-(--color-bg)"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        selectCustomer(null);
+                      }}
+                    >
+                      — Walk-in / no customer —
+                    </button>
+                    {custMatches.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="block w-full px-3 py-2 text-left text-sm hover:bg-(--color-bg)"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          selectCustomer(c);
+                        }}
+                      >
+                        <span className="font-medium">{c.name}</span>
+                        {c.phone && (
+                          <span className="ml-2 text-(--color-muted)">{c.phone}</span>
+                        )}
+                      </button>
+                    ))}
+                    {custMatches.length === 0 && (
+                      <div className="px-3 py-2 text-sm text-(--color-muted)">
+                        No customers match &ldquo;{custQuery}&rdquo;.
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="block w-full border-t border-(--color-border) px-3 py-2 text-left text-sm font-medium text-(--color-primary) hover:bg-(--color-bg)"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        openNewCustomer(custQuery.trim());
+                      }}
+                    >
+                      <UserPlus className="mr-1.5 inline h-4 w-4" /> Add
+                      {custQuery.trim() ? ` "${custQuery.trim()}"` : ""} as new customer
+                    </button>
+                  </div>
+                )}
+              </div>
+              {customerId && (
+                <button
+                  type="button"
+                  className="btn-outline shrink-0"
+                  onClick={openEditCustomer}
+                  title="Edit customer"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+              )}
               <button
                 type="button"
                 className="btn-outline shrink-0"
-                onClick={() => setShowNewCust((v) => !v)}
+                onClick={() => (showNewCust ? setShowNewCust(false) : openNewCustomer())}
                 title="New customer"
               >
                 <UserPlus className="h-4 w-4" />
@@ -325,10 +501,14 @@ export function DocEditor({
           </div>
         </div>
 
-        {showNewCust && (
-          <div className="mt-4 grid gap-3 rounded-lg border border-(--color-border) bg-(--color-bg) p-3 sm:grid-cols-4">
+        <Sheet
+          open={showNewCust}
+          onClose={() => setShowNewCust(false)}
+          title={ncEditingId ? "Edit customer" : "Add customer"}
+        >
+          <div className="space-y-3">
             <input
-              className="input sm:col-span-2"
+              className="input"
               placeholder="Customer name"
               value={nc.name}
               onChange={(e) => setNc({ ...nc, name: e.target.value })}
@@ -339,27 +519,71 @@ export function DocEditor({
               value={nc.gstin}
               onChange={(e) => setNc({ ...nc, gstin: e.target.value })}
             />
-            <input
-              className="input"
-              placeholder="District"
-              value={nc.district}
-              onChange={(e) => setNc({ ...nc, district: e.target.value })}
-            />
-            <input
-              className="input"
-              placeholder="Location (area)"
-              value={nc.location}
-              onChange={(e) => setNc({ ...nc, location: e.target.value })}
-            />
-            <input
-              className="input sm:col-span-2"
-              placeholder="Phone (optional)"
-              value={nc.phone}
-              onChange={(e) => setNc({ ...nc, phone: e.target.value })}
-            />
-            <div className="flex gap-2 sm:col-span-2">
-              <button type="button" className="btn-primary" onClick={addCustomer}>
-                Add customer
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                className="input"
+                placeholder="District"
+                value={nc.district}
+                onChange={(e) => setNc({ ...nc, district: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="Location (area)"
+                value={nc.location}
+                onChange={(e) => setNc({ ...nc, location: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                className="input"
+                placeholder="Phone *"
+                value={nc.phone}
+                onChange={(e) => {
+                  setNcDuplicate(null);
+                  setNc({ ...nc, phone: e.target.value });
+                }}
+              />
+              <input
+                className="input"
+                placeholder="Email"
+                value={nc.email}
+                onChange={(e) => setNc({ ...nc, email: e.target.value })}
+              />
+            </div>
+            {ncDuplicate && (
+              <div className="rounded-lg border border-(--color-warn) bg-(--color-warn-soft) p-3 text-sm">
+                <p>
+                  <strong>{ncDuplicate.name}</strong> already has this phone number.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={() => {
+                      const existing = custList.find((c) => c.id === ncDuplicate.id);
+                      selectCustomer(
+                        existing ?? { id: ncDuplicate.id, name: ncDuplicate.name, phone: nc.phone || null, stateCode: TAMIL_NADU_CODE },
+                      );
+                      setShowNewCust(false);
+                      setNcDuplicate(null);
+                    }}
+                  >
+                    Use {ncDuplicate.name} instead
+                  </button>
+                  <button type="button" className="btn-ghost" onClick={() => addCustomer(true)}>
+                    {ncEditingId ? "Save anyway" : "Add as new customer anyway"}
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                className="btn-primary flex-1"
+                onClick={() => addCustomer()}
+                disabled={!nc.name.trim() || !nc.phone.trim()}
+              >
+                {ncEditingId ? "Save changes" : "Add customer"}
               </button>
               <button
                 type="button"
@@ -370,7 +594,7 @@ export function DocEditor({
               </button>
             </div>
           </div>
-        )}
+        </Sheet>
       </div>
 
       {/* Line items */}
@@ -615,7 +839,16 @@ export function DocEditor({
       )}
 
       <div className="flex items-center gap-2">
-        <button className="btn-primary" onClick={onSave} disabled={pending}>
+        <button
+          className="btn-primary"
+          onClick={onSave}
+          disabled={pending || !hasValidItems}
+          title={
+            hasValidItems
+              ? undefined
+              : "Every line item needs a description, quantity, unit, and rate"
+          }
+        >
           {pending ? "Saving…" : initial?.id ? "Save changes" : `Create ${kind === "invoice" ? "invoice" : "quotation"}`}
         </button>
         <Link href={base} className="btn-ghost">

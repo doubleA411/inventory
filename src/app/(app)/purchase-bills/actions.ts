@@ -6,9 +6,7 @@ import {
   createPurchaseBillCore,
   cancelPurchaseBillCore,
   deletePurchaseBillCore,
-  recordPurchaseBillPaymentCore,
   type PurchaseBillInput,
-  type PurchaseBillPaymentInput,
   type SaveResult,
 } from "@/lib/purchases";
 
@@ -38,14 +36,4 @@ export async function deletePurchaseBill(id: string, vendorId: string | null): P
   await deletePurchaseBillCore(organization.id, id);
   revalidatePath("/vendors");
   if (vendorId) revalidatePath(`/vendors/${vendorId}`);
-}
-
-export async function recordPurchaseBillPayment(
-  raw: PurchaseBillPaymentInput,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { organization, user } = await requireRole("admin");
-  const result = await recordPurchaseBillPaymentCore(organization.id, user.id, raw);
-  revalidatePath(`/purchase-bills/${raw.purchaseBillId}`);
-  revalidatePath("/vendors");
-  return result;
 }

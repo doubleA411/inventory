@@ -755,9 +755,15 @@ export const purchaseBillPayments = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    purchaseBillId: uuid("purchase_bill_id")
-      .notNull()
-      .references(() => purchaseBills.id, { onDelete: "cascade" }),
+    // Payments are recorded against the vendor as a whole and auto-allocated
+    // across their oldest open bills (see recordVendorPaymentCore) — this is
+    // always set. purchaseBillId is only set for the portion of the payment
+    // that landed on a specific bill; a row with no bill is an unapplied
+    // advance/credit (paid more than was due at the time).
+    vendorId: uuid("vendor_id").references(() => vendors.id, { onDelete: "set null" }),
+    purchaseBillId: uuid("purchase_bill_id").references(() => purchaseBills.id, {
+      onDelete: "cascade",
+    }),
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
     method: paymentMethodEnum("method").notNull().default("cash"),
     reference: text("reference"),
@@ -766,7 +772,10 @@ export const purchaseBillPayments = pgTable(
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("purchase_bill_payments_bill_idx").on(t.purchaseBillId)],
+  (t) => [
+    index("purchase_bill_payments_bill_idx").on(t.purchaseBillId),
+    index("purchase_bill_payments_vendor_idx").on(t.vendorId),
+  ],
 );
 
 export const vendorsRelations = relations(vendors, ({ many }) => ({

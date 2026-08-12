@@ -22,7 +22,14 @@ import {
 } from "@/lib/billing";
 
 const run = Date.now();
-const ITEM = { description: "Catering service", hsnSac: "996332", quantity: 10, rate: 100, taxRate: 18 };
+const ITEM = {
+  description: "Catering service",
+  hsnSac: "996332",
+  quantity: 10,
+  unit: "plate",
+  rate: 100,
+  taxRate: 18,
+};
 
 describe("billing (quotations, invoices, approvals, payments)", () => {
   let gstOrg: Organization; // GST-registered, state = Tamil Nadu (33)

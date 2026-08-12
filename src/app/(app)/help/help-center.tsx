@@ -96,11 +96,18 @@ export function HelpCenter() {
                           )}
                         />
                       </button>
-                      {isOpen && (
-                        <div className="px-4 pb-4 text-sm leading-relaxed text-(--color-muted)">
-                          {it.a}
+                      <div
+                        className={cn(
+                          "grid transition-[grid-template-rows] duration-200 ease-[var(--ease-out)]",
+                          isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                        )}
+                      >
+                        <div className="overflow-hidden">
+                          <div className="px-4 pb-4 text-sm leading-relaxed text-(--color-muted)">
+                            {it.a}
+                          </div>
                         </div>
-                      )}
+                      </div>
                     </div>
                   );
                 })}

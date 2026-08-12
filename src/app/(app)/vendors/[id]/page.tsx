@@ -9,6 +9,7 @@ import {
 import { PageHeader, Badge } from "@/components/ui";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { ArrowLeft, Plus } from "lucide-react";
+import { VendorPaymentForm } from "./payment-form";
 
 export default async function VendorDetailPage({
   params,
@@ -133,7 +134,7 @@ export default async function VendorDetailPage({
             </div>
             {payments.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm text-(--color-muted)">
-                No payments recorded yet. Record a payment from a purchase bill to see it here.
+                No payments recorded yet.
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -155,9 +156,15 @@ export default async function VendorDetailPage({
                           {fmtMoney(p.amount, cur)}
                         </td>
                         <td className="px-4 py-2.5">
-                          <Link href={`/purchase-bills/${p.billId}`} className="hover:underline">
-                            {p.billNumber}
-                          </Link>
+                          {p.billId ? (
+                            <Link href={`/purchase-bills/${p.billId}`} className="hover:underline">
+                              {p.billNumber}
+                            </Link>
+                          ) : (
+                            <span className="text-(--color-muted)">
+                              {p.note?.includes("opening balance") ? "Opening balance" : "Advance / credit"}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-2.5 text-(--color-muted) capitalize">
                           {p.method.replace("_", " ")}
@@ -174,17 +181,26 @@ export default async function VendorDetailPage({
           </div>
         </div>
 
-        <div className="card space-y-2 p-4 text-sm">
-          <div className="font-semibold">Vendor details</div>
-          <div className="text-(--color-muted)">GSTIN: {vendor.gstin || "—"}</div>
-          <div className="text-(--color-muted)">Address: {vendor.addressLine || "—"}</div>
-          <div className="text-(--color-muted)">PIN: {vendor.pincode || "—"}</div>
-          <div className="text-(--color-muted)">Ph: {vendor.phone || "—"}</div>
-          <div className="text-(--color-muted)">Email: {vendor.email || "—"}</div>
-          <div className="text-(--color-muted)">
-            Opening balance: {fmtMoney(vendor.openingBalance, cur)}
+        <div className="space-y-6">
+          {due > 0 && (
+            <div className="card p-4">
+              <div className="mb-3 text-sm font-semibold">Record a payment</div>
+              <VendorPaymentForm vendorId={vendor.id} due={due} />
+            </div>
+          )}
+
+          <div className="card space-y-2 p-4 text-sm">
+            <div className="font-semibold">Vendor details</div>
+            <div className="text-(--color-muted)">GSTIN: {vendor.gstin || "—"}</div>
+            <div className="text-(--color-muted)">Address: {vendor.addressLine || "—"}</div>
+            <div className="text-(--color-muted)">PIN: {vendor.pincode || "—"}</div>
+            <div className="text-(--color-muted)">Ph: {vendor.phone || "—"}</div>
+            <div className="text-(--color-muted)">Email: {vendor.email || "—"}</div>
+            <div className="text-(--color-muted)">
+              Opening balance: {fmtMoney(vendor.openingBalance, cur)}
+            </div>
+            <div className="text-(--color-muted)">Notes: {vendor.notes || "—"}</div>
           </div>
-          <div className="text-(--color-muted)">Notes: {vendor.notes || "—"}</div>
         </div>
       </div>
     </div>
