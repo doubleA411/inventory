@@ -20,6 +20,11 @@ export const QUOTE_STATUS_META: Record<string, { label: string; tone: Tone }> = 
   converted: { label: "Converted", tone: "ok" },
 };
 
+export const PURCHASE_LIST_STATUS_META: Record<string, { label: string; tone: Tone }> = {
+  draft: { label: "Draft", tone: "default" },
+  sent: { label: "Sent", tone: "primary" },
+};
+
 export const MOVEMENT_META: Record<
   MovementType,
   { label: string; tone: "ok" | "danger" | "warn" | "primary"; sign: string }

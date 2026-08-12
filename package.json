@@ -17,10 +17,12 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@radix-ui/react-popover": "^1.1.23",
     "@sparticuz/chromium": "^148.0.0",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "dayjs": "^1.11.21",
     "driver.js": "^1.8.0",
     "drizzle-orm": "^0.45.2",

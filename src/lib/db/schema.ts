@@ -86,6 +86,7 @@ export const organizations = pgTable("organizations", {
   invoicePrefix: text("invoice_prefix").notNull().default("INV"),
   quotePrefix: text("quote_prefix").notNull().default("QUO"),
   purchaseBillPrefix: text("purchase_bill_prefix").notNull().default("PB"),
+  purchaseListPrefix: text("purchase_list_prefix").notNull().default("PL"),
   // Last invoice number issued outside this app, if migrating from another
   // system — the next generated invoice's seq will be this + 1.
   invoiceStartingNumber: integer("invoice_starting_number").notNull().default(0),
@@ -778,8 +779,75 @@ export const purchaseBillPayments = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// Purchase lists: what to ask a vendor to supply, sent to them ahead of
+// buying anything. Deliberately separate from purchase_bills — a list is a
+// request, it never touches stock or vendor dues (no rate/amount at all);
+// a bill is a receipt of what was actually bought. No conversion between the
+// two in v1 — see purchase_bill_status_enum's own "no edit after creation"
+// note for why bills stay append-only regardless.
+// ---------------------------------------------------------------------------
+export const purchaseListStatusEnum = pgEnum("purchase_list_status", ["draft", "sent"]);
+
+export const purchaseLists = pgTable(
+  "purchase_lists",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    number: text("number").notNull(), // e.g. PL/25-26/0001
+    seq: integer("seq").notNull(),
+    fy: text("fy").notNull(),
+    vendorId: uuid("vendor_id").references(() => vendors.id, { onDelete: "set null" }),
+    listDate: date("list_date").notNull().defaultNow(),
+    status: purchaseListStatusEnum("status").notNull().default("draft"),
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("purchase_lists_org_number_uq").on(t.organizationId, t.number),
+    index("purchase_lists_org_idx").on(t.organizationId),
+    index("purchase_lists_vendor_idx").on(t.vendorId),
+  ],
+);
+
+export const purchaseListItems = pgTable("purchase_list_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  purchaseListId: uuid("purchase_list_id")
+    .notNull()
+    .references(() => purchaseLists.id, { onDelete: "cascade" }),
+  position: integer("position").notNull().default(0),
+  // Null for an ad-hoc item added on top of the vendor's preferred-product
+  // list (not one of their usual products, or not in the catalogue at all).
+  productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+  description: text("description").notNull(),
+  quantity: numeric("quantity", { precision: 20, scale: 6 }).notNull().default("1"),
+  unit: text("unit"),
+});
+
+export const purchaseListsRelations = relations(purchaseLists, ({ one, many }) => ({
+  vendor: one(vendors, {
+    fields: [purchaseLists.vendorId],
+    references: [vendors.id],
+  }),
+  items: many(purchaseListItems),
+}));
+export const purchaseListItemsRelations = relations(purchaseListItems, ({ one }) => ({
+  purchaseList: one(purchaseLists, {
+    fields: [purchaseListItems.purchaseListId],
+    references: [purchaseLists.id],
+  }),
+  product: one(products, {
+    fields: [purchaseListItems.productId],
+    references: [products.id],
+  }),
+}));
+
 export const vendorsRelations = relations(vendors, ({ many }) => ({
   purchaseBills: many(purchaseBills),
+  purchaseLists: many(purchaseLists),
 }));
 export const purchaseBillsRelations = relations(purchaseBills, ({ one, many }) => ({
   vendor: one(vendors, {
@@ -817,3 +885,6 @@ export type PurchaseBill = typeof purchaseBills.$inferSelect;
 export type PurchaseBillItem = typeof purchaseBillItems.$inferSelect;
 export type PurchaseBillPayment = typeof purchaseBillPayments.$inferSelect;
 export type PurchaseBillStatus = (typeof purchaseBillStatusEnum.enumValues)[number];
+export type PurchaseList = typeof purchaseLists.$inferSelect;
+export type PurchaseListItem = typeof purchaseListItems.$inferSelect;
+export type PurchaseListStatus = (typeof purchaseListStatusEnum.enumValues)[number];

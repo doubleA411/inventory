@@ -6,10 +6,12 @@ import {
   listPurchaseBillsForVendor,
   listPaymentsForVendor,
 } from "@/lib/purchase-queries";
-import { PageHeader, Badge } from "@/components/ui";
+import { listPurchaseListsForVendor } from "@/lib/purchase-list-queries";
+import { PageHeader } from "@/components/ui";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { ArrowLeft, Plus } from "lucide-react";
 import { VendorPaymentForm } from "./payment-form";
+import { VendorPurchasingTabs } from "./purchasing-tabs";
 
 export default async function VendorDetailPage({
   params,
@@ -18,10 +20,11 @@ export default async function VendorDetailPage({
 }) {
   const { organization } = await requireRole("admin");
   const { id } = await params;
-  const [vendor, bills, payments] = await Promise.all([
+  const [vendor, bills, payments, purchaseLists] = await Promise.all([
     getVendor(organization.id, id),
     listPurchaseBillsForVendor(organization.id, id),
     listPaymentsForVendor(organization.id, id),
+    listPurchaseListsForVendor(organization.id, id),
   ]);
   if (!vendor) notFound();
   const cur = organization.currency;
@@ -45,9 +48,14 @@ export default async function VendorDetailPage({
         title={vendor.name}
         subtitle={[vendor.location, vendor.district].filter(Boolean).join(", ")}
         action={
-          <Link href={`/purchase-bills/new?vendorId=${vendor.id}`} className="btn-primary">
-            <Plus className="h-4 w-4" /> New purchase bill
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={`/purchase-lists/new?vendorId=${vendor.id}`} className="btn-outline">
+              <Plus className="h-4 w-4" /> New purchase list
+            </Link>
+            <Link href={`/purchase-bills/new?vendorId=${vendor.id}`} className="btn-primary">
+              <Plus className="h-4 w-4" /> New purchase bill
+            </Link>
+          </div>
         }
       />
 
@@ -79,54 +87,7 @@ export default async function VendorDetailPage({
             )}
           </div>
 
-          <div className="card overflow-hidden">
-            <div className="border-b border-(--color-border) px-4 py-3 text-sm font-semibold">
-              Purchase bills
-            </div>
-            {bills.length === 0 ? (
-              <div className="px-4 py-6 text-center text-sm text-(--color-muted)">
-                No purchase bills yet.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
-                      <th className="px-4 py-2 font-medium">Bill</th>
-                      <th className="px-4 py-2 font-medium">Date</th>
-                      <th className="px-4 py-2 text-right font-medium">Amount</th>
-                      <th className="px-4 py-2 text-right font-medium">Due</th>
-                      <th className="px-4 py-2 font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-(--color-border)">
-                    {bills.map((b) => {
-                      const billDue = Number(b.total) - Number(b.amountPaid);
-                      return (
-                        <tr key={b.id} className="hover:bg-(--color-bg)">
-                          <td className="px-4 py-2.5">
-                            <Link href={`/purchase-bills/${b.id}`} className="font-medium hover:underline">
-                              {b.number}
-                            </Link>
-                          </td>
-                          <td className="px-4 py-2.5 text-(--color-muted)">{fmtDate(b.billDate)}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums">{fmtMoney(b.total, cur)}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums">
-                            {b.status === "active" && billDue > 0 ? fmtMoney(billDue, cur) : "—"}
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <Badge tone={b.status === "cancelled" ? "default" : billDue > 0 ? "warn" : "ok"}>
-                              {b.status === "cancelled" ? "Cancelled" : billDue > 0 ? "Due" : "Paid"}
-                            </Badge>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          <VendorPurchasingTabs bills={bills} purchaseLists={purchaseLists} currency={cur} />
 
           <div className="card overflow-hidden">
             <div className="border-b border-(--color-border) px-4 py-3 text-sm font-semibold">

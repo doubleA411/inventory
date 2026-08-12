@@ -155,6 +155,13 @@
       "when": 1786452746593,
       "tag": "0021_gifted_ozymandias",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786518800784,
+      "tag": "0022_lonely_lily_hollister",
+      "breakpoints": true
     }
   ]
 }
