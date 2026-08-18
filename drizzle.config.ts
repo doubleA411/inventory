@@ -15,6 +15,19 @@ if (!url) {
 
 const isLocalDb = /@(localhost|127\.0\.0\.1|\[::1\])/.test(url);
 
+// `push` and `drop` change the schema WITHOUT writing a __drizzle_migrations
+// row. That is exactly how 0021 drifted: prod's schema moved, the migration
+// was never recorded, and the next `migrate` had no idea. Adding DRIZZLE_ENV
+// made prod reachable, so make these physically impossible against it.
+if (!isLocalDb && /\b(push|drop)\b/.test(process.argv.slice(2).join(" "))) {
+  throw new Error(
+    `refusing to run push/drop against a remote database (${new URL(url).host}).\n` +
+      `Schema changes to production go through migrations:\n` +
+      `  npm run db:generate   # writes a migration file\n` +
+      `  npm run db:migrate:prod`,
+  );
+}
+
 // Loud about the target so a prod migration is never a surprise.
 console.log(
   `[drizzle] env=${envFile} host=${new URL(url).host} ${isLocalDb ? "(local)" : "*** REMOTE ***"}`,

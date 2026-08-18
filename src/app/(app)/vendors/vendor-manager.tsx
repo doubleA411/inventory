@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Search, Trash2, UserPlus, X } from "lucide-react";
+import { Pencil, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
 import { saveVendor, deleteVendor, quickCreateProduct } from "./actions";
 import { fmtMoney } from "@/lib/utils";
 import { Sheet } from "@/components/sheet";
@@ -39,6 +39,8 @@ export function VendorManager({
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  // null = the sheet is creating a new vendor; an id = editing that vendor.
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [f, setF] = useState({ ...empty });
   const [productList, setProductList] = useState(products);
   const [productQuery, setProductQuery] = useState("");
@@ -97,7 +99,23 @@ export function VendorManager({
   }
 
   function openCreate() {
+    setEditingId(null);
     setF({ ...empty });
+    setProductIds(new Set());
+    setProductQuery("");
+    setShowQuickAdd(false);
+    setError(null);
+    setOpen(true);
+  }
+
+  function openEdit(v: VendorRow) {
+    setEditingId(v.id);
+    setF({
+      name: v.name,
+      phone: v.phone ?? "",
+      location: v.location ?? "",
+      openingBalance: v.openingBalance,
+    });
     setProductIds(new Set());
     setProductQuery("");
     setShowQuickAdd(false);
@@ -109,11 +127,14 @@ export function VendorManager({
     setError(null);
     start(async () => {
       const res = await saveVendor({
+        ...(editingId ? { id: editingId } : {}),
         name: f.name,
         phone: f.phone || null,
         location: f.location || null,
         openingBalance: f.openingBalance ? Number(f.openingBalance) : 0,
-        productIds: [...productIds],
+        // Product links are only applied on create (see saveVendor), so don't
+        // send them when editing — the picker is hidden in that mode.
+        ...(editingId ? {} : { productIds: [...productIds] }),
       });
       if (res.ok) {
         setOpen(false);
@@ -179,7 +200,10 @@ export function VendorManager({
                       )}
                     </td>
                     <td className="px-4 py-3 text-(--color-muted)">{v.phone ?? "—"}</td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <button className="btn-ghost" onClick={() => openEdit(v)} title="Edit">
+                        <Pencil className="h-4 w-4" />
+                      </button>
                       <button className="btn-ghost" onClick={() => remove(v.id)} title="Delete">
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -192,7 +216,11 @@ export function VendorManager({
         </div>
       )}
 
-      <Sheet open={open} onClose={() => setOpen(false)} title="Add vendor">
+      <Sheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title={editingId ? "Edit vendor" : "Add vendor"}
+      >
         <div className="space-y-3">
           <div>
             <label className="label">Name *</label>
@@ -236,7 +264,7 @@ export function VendorManager({
             </p>
           </div>
 
-          <div>
+          <div className={editingId ? "hidden" : undefined}>
             <label className="label mb-1 block">Products supplied</label>
             {productIds.size > 0 && (
               <div className="mb-2 flex flex-wrap gap-1.5">
