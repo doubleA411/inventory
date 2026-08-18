@@ -25,3 +25,17 @@ connecting — check that line says the database you meant.
 Never fake a row in `drizzle.__drizzle_migrations` to make `migrate` skip a migration; it
 marks the migration applied without running its SQL and hides the drift until something
 breaks in production.
+
+Three things now enforce this, so you shouldn't have to remember it:
+
+- **Production builds migrate first.** `build` runs `scripts/migrate-deploy.mjs`, which
+  applies pending migrations when `VERCEL_ENV=production` and fails the build if they
+  error — so a deploy can't go live against a schema it doesn't match. Preview and local
+  builds skip it and can never touch the production database.
+- **`push`/`drop` are blocked against remote databases.** They change the schema without
+  writing a `__drizzle_migrations` row, which is exactly how 0021 drifted.
+  `drizzle.config.ts` throws rather than let them run anywhere but localhost.
+- **`/api/health` reports drift.** It diffs every column and enum value in `schema.ts`
+  against the live catalog and returns 503 listing what's missing. The daily cron already
+  hits it, so drift from any source — including hand-edits in the Supabase console —
+  surfaces within a day instead of as a user-facing 500.
