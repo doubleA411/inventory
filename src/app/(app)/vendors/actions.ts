@@ -55,9 +55,18 @@ export async function saveVendor(
   };
 
   if (input.id) {
+    // Only overwrite what the caller actually sent. `values` fills every column
+    // (defaulting to null / "Chennai"), which is right on create but would make
+    // a partial edit form silently wipe fields it doesn't render — gstin,
+    // address, pincode, email, notes.
+    const patch = Object.fromEntries(
+      (Object.keys(values) as (keyof typeof values)[])
+        .filter((k) => input[k as keyof VendorInput] !== undefined)
+        .map((k) => [k, values[k]]),
+    );
     await db
       .update(vendors)
-      .set(values)
+      .set(patch)
       .where(and(eq(vendors.id, input.id), eq(vendors.organizationId, organization.id)));
     revalidatePath("/vendors");
     revalidatePath(`/vendors/${input.id}`);
