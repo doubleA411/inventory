@@ -14,7 +14,9 @@
     "db:seed": "tsx --env-file=.env.local src/lib/db/seed.ts",
     "db:reset": "drizzle-kit push --force && tsx --env-file=.env.local src/lib/db/seed.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:migrate:prod": "DRIZZLE_ENV=.env.production.local drizzle-kit migrate",
+    "db:check:prod": "DRIZZLE_ENV=.env.production.local drizzle-kit check"
   },
   "dependencies": {
     "@radix-ui/react-popover": "^1.1.23",
