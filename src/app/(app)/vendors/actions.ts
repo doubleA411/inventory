@@ -7,7 +7,11 @@ import { db } from "@/lib/db";
 import { vendors, products } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
 import { TAMIL_NADU_CODE } from "@/lib/india-states";
-import { recordVendorPaymentCore, type VendorPaymentInput } from "@/lib/purchases";
+import {
+  recordVendorPaymentCore,
+  reverseVendorPaymentCore,
+  type VendorPaymentInput,
+} from "@/lib/purchases";
 import { productSchema, createProduct } from "@/lib/products";
 
 export type VendorState = { error?: string; ok?: boolean; id?: string };
@@ -132,6 +136,26 @@ export async function recordVendorPayment(
     revalidatePath(`/vendors/${raw.vendorId}`);
     revalidatePath("/vendors");
     revalidatePath("/purchase-bills");
+  }
+  return result;
+}
+
+/**
+ * Undo a mistakenly recorded payment. Reverses the whole recording — one
+ * payment often lands as several rows across bills — see
+ * reverseVendorPaymentCore.
+ */
+export async function reverseVendorPayment(
+  paymentId: string,
+  vendorId: string,
+): Promise<{ ok: true; amount: number } | { ok: false; error: string }> {
+  const { organization } = await requireRole("admin");
+  const result = await reverseVendorPaymentCore(organization.id, paymentId);
+  if (result.ok) {
+    revalidatePath(`/vendors/${vendorId}`);
+    revalidatePath("/vendors");
+    revalidatePath("/purchase-bills");
+    revalidatePath("/dashboard");
   }
   return result;
 }

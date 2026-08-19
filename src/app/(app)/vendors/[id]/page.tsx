@@ -7,11 +7,13 @@ import {
   listPaymentsForVendor,
 } from "@/lib/purchase-queries";
 import { listPurchaseListsForVendor } from "@/lib/purchase-list-queries";
+import { OPENING_BALANCE_NOTE } from "@/lib/purchases";
 import { PageHeader } from "@/components/ui";
-import { fmtMoney, fmtDate } from "@/lib/utils";
+import { fmtMoney } from "@/lib/utils";
 import { ArrowLeft, Plus } from "lucide-react";
 import { VendorPaymentForm } from "./payment-form";
 import { VendorPurchasingTabs } from "./purchasing-tabs";
+import { VendorPaymentHistory } from "./payment-history";
 
 export default async function VendorDetailPage({
   params,
@@ -93,52 +95,21 @@ export default async function VendorDetailPage({
             <div className="border-b border-(--color-border) px-4 py-3 text-sm font-semibold">
               Payment tracking
             </div>
-            {payments.length === 0 ? (
-              <div className="px-4 py-6 text-center text-sm text-(--color-muted)">
-                No payments recorded yet.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
-                      <th className="px-4 py-2 font-medium">Date paid</th>
-                      <th className="px-4 py-2 text-right font-medium">Amount</th>
-                      <th className="px-4 py-2 font-medium">Bill</th>
-                      <th className="px-4 py-2 font-medium">Method</th>
-                      <th className="px-4 py-2 font-medium">Reference</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-(--color-border)">
-                    {payments.map((p) => (
-                      <tr key={p.id} className="hover:bg-(--color-bg)">
-                        <td className="px-4 py-2.5 text-(--color-muted)">{fmtDate(p.paidAt)}</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums font-medium">
-                          {fmtMoney(p.amount, cur)}
-                        </td>
-                        <td className="px-4 py-2.5">
-                          {p.billId ? (
-                            <Link href={`/purchase-bills/${p.billId}`} className="hover:underline">
-                              {p.billNumber}
-                            </Link>
-                          ) : (
-                            <span className="text-(--color-muted)">
-                              {p.note?.includes("opening balance") ? "Opening balance" : "Advance / credit"}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 text-(--color-muted) capitalize">
-                          {p.method.replace("_", " ")}
-                        </td>
-                        <td className="px-4 py-2.5 text-(--color-muted)">
-                          {p.reference || "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <VendorPaymentHistory
+              vendorId={vendor.id}
+              currency={cur}
+              payments={payments.map((p) => ({
+                id: p.id,
+                amount: p.amount,
+                method: p.method,
+                reference: p.reference,
+                paidAt: p.paidAt,
+                recordedAt: p.createdAt.toISOString(),
+                billId: p.billId,
+                billNumber: p.billNumber,
+                appliedToOpeningBalance: p.note?.includes(OPENING_BALANCE_NOTE) ?? false,
+              }))}
+            />
           </div>
         </div>
 

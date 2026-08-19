@@ -6,6 +6,8 @@ import {
   createPurchaseBillCore,
   cancelPurchaseBillCore,
   deletePurchaseBillCore,
+  removePurchaseBillItemCore,
+  type RemoveBillItemMode,
   type PurchaseBillInput,
   type SaveResult,
 } from "@/lib/purchases";
@@ -36,4 +38,28 @@ export async function deletePurchaseBill(id: string, vendorId: string | null): P
   await deletePurchaseBillCore(organization.id, id);
   revalidatePath("/vendors");
   if (vendorId) revalidatePath(`/vendors/${vendorId}`);
+}
+
+/**
+ * Drop one line off an existing bill — either just off the bill ("unlink",
+ * stock stays) or stock and all ("delete_restock"). See
+ * removePurchaseBillItemCore for what each mode is allowed to touch.
+ */
+export async function removePurchaseBillItem(
+  billId: string,
+  itemId: string,
+  mode: RemoveBillItemMode,
+  vendorId: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { organization } = await requireRole("admin");
+  const result = await removePurchaseBillItemCore(organization.id, billId, itemId, mode);
+  if (result.ok) {
+    revalidatePath(`/purchase-bills/${billId}`);
+    revalidatePath("/vendors");
+    if (vendorId) revalidatePath(`/vendors/${vendorId}`);
+    revalidatePath("/products");
+    revalidatePath("/movements");
+    revalidatePath("/dashboard");
+  }
+  return result;
 }
