@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   vendors,
@@ -8,6 +8,9 @@ import {
   purchaseBillPayments,
   products,
   users,
+  stockBatches,
+  stockMovements,
+  type PurchaseBillItem,
 } from "@/lib/db/schema";
 
 /** Lightweight product list for the purchase bill line-item picker. */
@@ -64,6 +67,61 @@ export async function listPurchaseBillsForVendor(orgId: string, vendorId: string
     .orderBy(desc(purchaseBills.createdAt));
 }
 
+
+export type PurchaseBillItemWithStock = PurchaseBillItem & {
+  /**
+   * The stock this line brought in, when it's still there: how much of it is
+   * left against how much arrived. Null for charge lines and for lines whose
+   * batch is already gone. `intact` is false once anything has been drawn from
+   * it — which is what decides whether the restock can still be deleted.
+   */
+  stock: { remaining: number; received: number; intact: boolean } | null;
+};
+
+/**
+ * Attach each line's remaining-vs-received stock, so the bill page can tell
+ * which lines can still have their restock deleted outright and which can only
+ * be unlinked from the vendor.
+ */
+async function withBatchState(
+  orgId: string,
+  items: PurchaseBillItem[],
+): Promise<PurchaseBillItemWithStock[]> {
+  const ids = items.map((i) => i.id);
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({
+      itemId: stockBatches.purchaseBillItemId,
+      remaining: stockBatches.quantityRemaining,
+      // Only stock-adding movements carry a batchId, so this is what the batch
+      // arrived with.
+      received: sql<string>`coalesce(sum(${stockMovements.deltaInStockUnit}), 0)`,
+    })
+    .from(stockBatches)
+    .leftJoin(stockMovements, eq(stockMovements.batchId, stockBatches.id))
+    .where(
+      and(
+        eq(stockBatches.organizationId, orgId),
+        inArray(stockBatches.purchaseBillItemId, ids),
+      ),
+    )
+    .groupBy(stockBatches.id);
+
+  const byItem = new Map<string, { remaining: number; received: number; intact: boolean }>();
+  for (const r of rows) {
+    if (!r.itemId) continue;
+    const prev = byItem.get(r.itemId) ?? { remaining: 0, received: 0, intact: true };
+    const remaining = Number(r.remaining);
+    const received = Number(r.received);
+    byItem.set(r.itemId, {
+      remaining: prev.remaining + remaining,
+      received: prev.received + received,
+      intact: prev.intact && remaining + 1e-6 >= received,
+    });
+  }
+  return items.map((i) => ({ ...i, stock: byItem.get(i.id) ?? null }));
+}
+
 export async function getPurchaseBillFull(orgId: string, id: string) {
   const [bill] = await db
     .select()
@@ -71,11 +129,12 @@ export async function getPurchaseBillFull(orgId: string, id: string) {
     .where(and(eq(purchaseBills.id, id), eq(purchaseBills.organizationId, orgId)))
     .limit(1);
   if (!bill) return null;
-  const items = await db
+  const rawItems = await db
     .select()
     .from(purchaseBillItems)
     .where(eq(purchaseBillItems.purchaseBillId, id))
     .orderBy(asc(purchaseBillItems.position));
+  const items = await withBatchState(orgId, rawItems);
   const vendor = bill.vendorId ? await getVendor(orgId, bill.vendorId) : null;
   const pays = await db
     .select({
@@ -128,6 +187,9 @@ export async function listPaymentsForVendor(orgId: string, vendorId: string) {
       reference: purchaseBillPayments.reference,
       paidAt: purchaseBillPayments.paidAt,
       note: purchaseBillPayments.note,
+      // Rows written by one recording share this — it's what groups a split
+      // payment back together when reversing it.
+      createdAt: purchaseBillPayments.createdAt,
       billId: purchaseBills.id,
       billNumber: purchaseBills.number,
       userName: users.name,

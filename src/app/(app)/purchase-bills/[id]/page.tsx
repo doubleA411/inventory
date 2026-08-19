@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { ArrowLeft, Printer } from "lucide-react";
 import { PurchaseBillActions } from "./purchase-bill-actions";
+import { BillItems } from "./bill-items";
 
 export default async function PurchaseBillViewPage({
   params,
@@ -57,46 +58,14 @@ export default async function PurchaseBillViewPage({
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <div className="card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
-                    <th className="px-4 py-2 font-medium">Item</th>
-                    <th className="px-4 py-2 text-right font-medium">Qty</th>
-                    <th className="px-4 py-2 text-right font-medium">Rate</th>
-                    <th className="px-4 py-2 text-right font-medium">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-(--color-border)">
-                  {items.map((i) => (
-                    <tr key={i.id}>
-                      <td className="px-4 py-2">{i.description}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">
-                        {i.productId ? `${Number(i.quantity)} ${i.unit ?? ""}` : "—"}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums">
-                        {i.productId ? fmtMoney(i.rate, cur) : "—"}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums">{fmtMoney(i.amount, cur)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex justify-end border-t border-(--color-border) p-4">
-              <table className="text-sm">
-                <tbody>
-                  <tr>
-                    <td className="pr-8 pt-1 font-semibold">Total</td>
-                    <td className="pt-1 text-right text-base font-semibold tabular-nums">
-                      {fmtMoney(bill.total, cur)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <BillItems
+            billId={id}
+            vendorId={vendor?.id ?? null}
+            items={items}
+            total={bill.total}
+            currency={cur}
+            editable={!cancelled}
+          />
           {bill.notes && (
             <p className="text-sm text-(--color-muted)">
               <span className="font-medium text-(--color-fg)">Notes:</span> {bill.notes}
