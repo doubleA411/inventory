@@ -49,6 +49,7 @@ export default async function EditQuotationPage({
           venue: quotation.venue,
           notes: quotation.notes,
           terms: quotation.terms,
+          applyGst: quotation.applyGst,
           items: items.map((i) => ({
             description: i.description,
             hsnSac: i.hsnSac,

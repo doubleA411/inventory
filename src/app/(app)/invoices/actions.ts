@@ -9,6 +9,7 @@ import {
   revokeInvoiceApprovalCore,
   deleteInvoiceCore,
   recordPaymentCore,
+  reverseInvoicePaymentCore,
   type InvoiceInput,
   type PaymentInput,
   type SaveResult,
@@ -83,5 +84,20 @@ export async function recordPayment(
   const result = await recordPaymentCore(organization.id, user.id, raw);
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${raw.invoiceId}`);
+  return result;
+}
+
+/** Undo a mistakenly recorded invoice payment. See reverseInvoicePaymentCore. */
+export async function reverseInvoicePayment(
+  paymentId: string,
+  invoiceId: string,
+): Promise<{ ok: true; amount: number } | { ok: false; error: string }> {
+  const { organization } = await requireRole("admin");
+  const result = await reverseInvoicePaymentCore(organization.id, paymentId);
+  if (result.ok) {
+    revalidatePath("/invoices");
+    revalidatePath(`/invoices/${invoiceId}`);
+    revalidatePath("/dashboard");
+  }
   return result;
 }

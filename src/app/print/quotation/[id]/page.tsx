@@ -6,18 +6,22 @@ import { PrintBar } from "../../print-bar";
 
 export default async function QuotationPrintPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ menu?: string }>;
 }) {
   const { organization } = await requireAuth();
   const { id } = await params;
+  const { menu } = await searchParams;
+  const menuOnly = menu === "1";
   const data = await getQuotationFull(organization.id, id);
   if (!data) notFound();
   const { quotation, items, customer } = data;
   // Approval gate: can't print until the owner approves.
   if (!quotation.approvedAt) redirect(`/quotations/${id}`);
 
-  const gstEnabled = organization.gstRegistered;
+  const gstEnabled = organization.gstRegistered && quotation.applyGst;
   const intraState =
     !organization.stateCode ||
     quotation.placeOfSupplyStateCode === organization.stateCode;
@@ -42,6 +46,7 @@ export default async function QuotationPrintPage({
             venue: quotation.venue,
             gstEnabled,
             intraState,
+            menuOnly,
             items: items.map((i) => ({
               description: i.description,
               hsnSac: i.hsnSac,

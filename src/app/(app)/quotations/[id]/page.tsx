@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui";
 import { ProfitabilityCard } from "@/components/profitability-card";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { QUOTE_STATUS_META } from "@/lib/labels";
-import { ArrowLeft, Download, Pencil, Printer } from "lucide-react";
+import { ArrowLeft, Download, Pencil, Printer, UtensilsCrossed } from "lucide-react";
 import { QuoteActions } from "./quote-actions";
 
 export default async function QuotationViewPage({
@@ -17,17 +17,23 @@ export default async function QuotationViewPage({
 }) {
   const { organization, role } = await requireRole("admin");
   const { id } = await params;
-  const [data, expenseSummary] = await Promise.all([
-    getQuotationFull(organization.id, id),
-    eventExpenseTotal(organization.id, id),
-  ]);
+  const data = await getQuotationFull(organization.id, id);
   if (!data) notFound();
   const { quotation, items, customer } = data;
   const cur = organization.currency;
   const meta = QUOTE_STATUS_META[quotation.status];
-  const gstEnabled = organization.gstRegistered;
+  const gstEnabled = organization.gstRegistered && quotation.applyGst;
   const approved = !!quotation.approvedAt;
   const isOwner = role === "owner";
+  const hasMenu = items.some((i) => i.menuItems?.length);
+  // Profitability only means something once the customer has actually
+  // committed to this price — a draft/sent estimate hasn't been agreed to
+  // yet, and a rejected/expired one never will be billed, so "margin"
+  // against either is a number that was never going to be earned.
+  const isCommitted = quotation.status === "accepted" || quotation.status === "converted";
+  const expenseSummary = isCommitted
+    ? await eventExpenseTotal(organization.id, id)
+    : null;
 
   return (
     <div>
@@ -62,6 +68,15 @@ export default async function QuotationViewPage({
               <Link href={`/print/quotation/${id}`} className="btn-outline">
                 <Printer className="h-4 w-4" /> Print
               </Link>
+              {hasMenu && (
+                <Link
+                  href={`/print/quotation/${id}?menu=1`}
+                  className="btn-outline"
+                  title="Dish lists only — no pricing"
+                >
+                  <UtensilsCrossed className="h-4 w-4" /> Print menu
+                </Link>
+              )}
               <a href={`/api/documents/quotation/${id}`} className="btn-primary">
                 <Download className="h-4 w-4" /> Download PDF
               </a>
@@ -159,13 +174,15 @@ export default async function QuotationViewPage({
         </div>
       </div>
 
-      <ProfitabilityCard
-        revenue={Number(quotation.total)}
-        cost={expenseSummary.total}
-        expenseCount={expenseSummary.count}
-        cur={cur}
-        expensesHref={`/expenses?quotationId=${id}`}
-      />
+      {expenseSummary && (
+        <ProfitabilityCard
+          revenue={Number(quotation.total)}
+          cost={expenseSummary.total}
+          expenseCount={expenseSummary.count}
+          cur={cur}
+          expensesHref={`/expenses?quotationId=${id}`}
+        />
+      )}
     </div>
   );
 }

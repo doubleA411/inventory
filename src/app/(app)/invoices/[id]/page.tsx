@@ -10,6 +10,7 @@ import { amountInWords } from "@/lib/tax";
 import { INVOICE_STATUS_META } from "@/lib/labels";
 import { ArrowLeft, Download, Pencil, Printer } from "lucide-react";
 import { PaymentForm } from "./payment-form";
+import { InvoicePaymentHistory } from "./payment-history";
 import { InvoiceActions } from "./invoice-actions";
 
 export default async function InvoiceViewPage({
@@ -236,25 +237,7 @@ export default async function InvoiceViewPage({
             <div className="border-b border-(--color-border) px-4 py-3 text-sm font-semibold">
               Payment history
             </div>
-            {payments.length === 0 ? (
-              <div className="px-4 py-6 text-center text-sm text-(--color-muted)">
-                No payments recorded.
-              </div>
-            ) : (
-              <div className="divide-y divide-(--color-border)">
-                {payments.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                    <div>
-                      <div className="font-medium tabular-nums">{fmtMoney(p.amount, cur)}</div>
-                      <div className="text-xs capitalize text-(--color-muted)">
-                        {p.method.replace("_", " ")} · {fmtDate(p.paidAt)}
-                        {p.reference ? ` · ${p.reference}` : ""}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <InvoicePaymentHistory invoiceId={id} currency={cur} payments={payments} />
           </div>
         </div>
       </div>

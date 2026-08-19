@@ -20,7 +20,7 @@ export default async function SharedQuotationPage({
   if (!data) notFound();
   const { quotation, items, customer } = data;
 
-  const gstEnabled = organization.gstRegistered;
+  const gstEnabled = organization.gstRegistered && quotation.applyGst;
   const intraState =
     !organization.stateCode || quotation.placeOfSupplyStateCode === organization.stateCode;
   const half = (Number(quotation.taxTotal) / 2).toFixed(2);

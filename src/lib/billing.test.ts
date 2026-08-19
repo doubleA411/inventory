@@ -16,6 +16,7 @@ import {
   approveInvoiceCore,
   revokeInvoiceApprovalCore,
   recordPaymentCore,
+  reverseInvoicePaymentCore,
   saveQuotationCore,
   approveQuotationCore,
   convertToInvoiceCore,
@@ -289,6 +290,67 @@ describe("billing (quotations, invoices, approvals, payments)", () => {
       const [inv] = await db.select().from(invoices).where(eq(invoices.id, created.id));
       expect(inv.status).toBe("paid");
       expect(Number(inv.amountPaid)).toBe(1180);
+    });
+
+    it("reversing a payment gives the due back and steps a paid invoice back to sent", async () => {
+      const created = await saveInvoiceCore(gstOrg, userId, {
+        customerId: null,
+        issueDate: "2026-07-24",
+        items: [ITEM], // total 1180
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+
+      await recordPaymentCore(gstOrg.id, userId, {
+        invoiceId: created.id,
+        amount: 1180,
+        method: "upi",
+      });
+      const { payments } = await import("@/lib/db/schema");
+      const [payment] = await db
+        .select()
+        .from(payments)
+        .where(eq(payments.invoiceId, created.id));
+
+      const result = await reverseInvoicePaymentCore(gstOrg.id, payment.id);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.amount).toBe(1180);
+
+      const [inv] = await db.select().from(invoices).where(eq(invoices.id, created.id));
+      expect(inv.status).toBe("sent"); // stepped back from "paid", not to "draft"
+      expect(Number(inv.amountPaid)).toBe(0);
+
+      const remaining = await db
+        .select()
+        .from(payments)
+        .where(eq(payments.invoiceId, created.id));
+      expect(remaining).toHaveLength(0);
+    });
+
+    it("reports a payment that is already gone instead of throwing", async () => {
+      const created = await saveInvoiceCore(gstOrg, userId, {
+        customerId: null,
+        issueDate: "2026-07-24",
+        items: [ITEM],
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+
+      await recordPaymentCore(gstOrg.id, userId, {
+        invoiceId: created.id,
+        amount: 500,
+        method: "cash",
+      });
+      const { payments } = await import("@/lib/db/schema");
+      const [payment] = await db
+        .select()
+        .from(payments)
+        .where(eq(payments.invoiceId, created.id));
+      expect((await reverseInvoicePaymentCore(gstOrg.id, payment.id)).ok).toBe(true);
+
+      const again = await reverseInvoicePaymentCore(gstOrg.id, payment.id);
+      expect(again.ok).toBe(false);
+      if (!again.ok) expect(again.error).toMatch(/no longer recorded/i);
     });
   });
 

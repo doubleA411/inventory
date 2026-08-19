@@ -59,6 +59,9 @@ export const quoteSchema = z.object({
   venue: z.string().trim().optional().nullable(),
   notes: z.string().trim().optional().nullable(),
   terms: z.string().trim().optional().nullable(),
+  // Per-quotation override of the org's GST default — off hides GST from the
+  // estimate. Ignored if the org isn't registered.
+  applyGst: z.boolean().optional(),
   items: z.array(itemSchema),
 });
 export type QuotationInput = z.infer<typeof quoteSchema>;
@@ -306,6 +309,55 @@ export async function recordPaymentCore(
   return { ok: true };
 }
 
+/**
+ * Undo a mistakenly recorded invoice payment. Unlike a vendor payment,
+ * a customer payment is never split — it always lands as exactly one row
+ * against exactly one invoice (see recordPaymentCore) — so reversing it is
+ * just deleting that row and giving the amount back to the invoice's due.
+ *
+ * A status of "paid" only ever came from this money, so if removing it drops
+ * the invoice back under its total, the status steps back to "sent" (never
+ * back to "draft" — being sent doesn't undo). Any other status (including
+ * "cancelled") is left alone.
+ */
+export async function reverseInvoicePaymentCore(
+  orgId: string,
+  paymentId: string,
+): Promise<{ ok: true; amount: number } | { ok: false; error: string }> {
+  try {
+    return await db.transaction(async (tx) => {
+      const [payment] = await tx
+        .select()
+        .from(payments)
+        .where(and(eq(payments.id, paymentId), eq(payments.organizationId, orgId)))
+        .limit(1);
+      if (!payment) return { ok: false as const, error: "That payment is no longer recorded." };
+
+      const [inv] = await tx
+        .select()
+        .from(invoices)
+        .where(eq(invoices.id, payment.invoiceId))
+        .limit(1);
+      if (inv) {
+        const amount = Number(payment.amount);
+        const newPaid = Math.max(0, Math.round((Number(inv.amountPaid) - amount) * 100) / 100);
+        const status =
+          inv.status === "paid" && newPaid < Number(inv.total) ? "sent" : inv.status;
+        await tx
+          .update(invoices)
+          .set({ amountPaid: String(newPaid), status })
+          .where(eq(invoices.id, inv.id));
+      }
+
+      await tx.delete(payments).where(eq(payments.id, paymentId));
+
+      return { ok: true as const, amount: Number(payment.amount) };
+    });
+  } catch {
+    return { ok: false, error: "Could not reverse that payment." };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Quotations
 // ---------------------------------------------------------------------------
@@ -326,9 +378,10 @@ export async function saveQuotationCore(
   }
 
   const { placeCode, intraState } = await placeOfSupply(org, d.customerId);
+  const gstEnabled = org.gstRegistered ? (d.applyGst ?? true) : false;
   const totals = computeTotals(
     d.items.map((i) => ({ quantity: i.quantity, rate: i.rate, taxRate: i.taxRate })),
-    { gstEnabled: org.gstRegistered, intraState },
+    { gstEnabled, intraState },
   );
 
   try {
@@ -345,6 +398,7 @@ export async function saveQuotationCore(
         total: String(totals.total),
         notes: d.notes || null,
         terms: d.terms || null,
+        applyGst: d.applyGst ?? true,
       };
 
       if (quoteId) {

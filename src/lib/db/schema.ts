@@ -437,6 +437,11 @@ export const quotations = pgTable(
     total: numeric("total", { precision: 14, scale: 2 }).notNull().default("0"),
     notes: text("notes"),
     terms: text("terms"),
+    // Per-quotation override of the org's GST default, same idea as an
+    // invoice's applyGst — a quotation isn't a legal tax document either way,
+    // but some customers still want the GST lines hidden on the estimate.
+    // Ignored if the org isn't registered.
+    applyGst: boolean("apply_gst").notNull().default(true),
     convertedInvoiceId: uuid("converted_invoice_id"),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     approvedBy: uuid("approved_by").references(() => users.id, { onDelete: "set null" }),

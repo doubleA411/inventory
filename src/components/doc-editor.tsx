@@ -50,7 +50,7 @@ export type DocEditorInitial = {
   venue?: string | null;
   notes?: string | null;
   terms?: string | null;
-  applyGst?: boolean; // invoice only
+  applyGst?: boolean;
   showMenuList?: boolean; // invoice only
   items?: {
     description: string;
@@ -135,7 +135,7 @@ export function DocEditor({
   );
   const [applyGst, setApplyGst] = useState(initial?.applyGst ?? true);
   const [showMenuList, setShowMenuList] = useState(initial?.showMenuList ?? true);
-  const effectiveGst = kind === "invoice" ? gstEnabled && applyGst : gstEnabled;
+  const effectiveGst = gstEnabled && applyGst;
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   // The line-items table scrolls horizontally on narrow screens; the expanded
   // menu-items editor is a full editing surface, not another data column, so
@@ -355,6 +355,7 @@ export function DocEditor({
             venue: venue || null,
             notes,
             terms,
+            applyGst: gstEnabled ? applyGst : undefined,
             items: rows.map((r) => ({
               description: r.description,
               hsnSac: r.hsnSac || null,
@@ -774,7 +775,7 @@ export function DocEditor({
           </div>
         </div>
         <div className="card h-fit p-4">
-          {kind === "invoice" && gstEnabled && (
+          {gstEnabled && (
             <label className="mb-3 flex items-start gap-2 border-b border-(--color-border) pb-3 text-sm">
               <input
                 type="checkbox"
@@ -783,9 +784,11 @@ export function DocEditor({
                 onChange={(e) => setApplyGst(e.target.checked)}
               />
               <span>
-                Apply GST to this invoice
+                {kind === "invoice" ? "Apply GST to this invoice" : "Apply GST to this quotation"}
                 <span className="block text-xs text-(--color-muted)">
-                  Off issues a Bill of Supply instead of a Tax Invoice.
+                  {kind === "invoice"
+                    ? "Off issues a Bill of Supply instead of a Tax Invoice."
+                    : "Off hides GST from the printed estimate."}
                 </span>
               </span>
             </label>
@@ -822,11 +825,16 @@ export function DocEditor({
           <div className="mt-2 border-t border-(--color-border) pt-2">
             <Row label="Total" value={fmtMoney(totals.total, currency)} bold />
           </div>
-          {!effectiveGst && (
+          {!effectiveGst && kind === "invoice" && (
             <p className="mt-2 text-xs text-(--color-muted)">
               {gstEnabled
                 ? "GST off for this invoice — this will be a Bill of Supply."
                 : "Not GST-registered — this is a Bill of Supply (no tax)."}
+            </p>
+          )}
+          {!effectiveGst && kind === "quote" && gstEnabled && (
+            <p className="mt-2 text-xs text-(--color-muted)">
+              GST off for this quotation — hidden from the printed estimate.
             </p>
           )}
         </div>

@@ -89,6 +89,11 @@ export type DocData = {
   notes: string | null;
   terms: string | null;
   showMenuList?: boolean; // invoice only — defaults to true when omitted
+  // Print-time choice (not stored): the dish lists only, with no pricing
+  // anywhere — not even the per-session rate under each list — and no priced
+  // pages at all. For handing to a kitchen/venue without the customer's
+  // pricing. Overrides showMenuList (the menu always shows when this is on).
+  menuOnly?: boolean;
 };
 
 function isImage(url: string | null): boolean {
@@ -306,13 +311,17 @@ export function DocumentView({
     : {};
 
   const menuLines =
-    doc.showMenuList === false ? [] : doc.items.filter((it) => it.menuItems?.length);
+    doc.menuOnly || doc.showMenuList !== false
+      ? doc.items.filter((it) => it.menuItems?.length)
+      : [];
   const menuPages = chunkMenuLines(menuLines);
-  const pricedPages = layoutPricedPages(
-    doc.items,
-    doc.payments ?? [],
-    doc.kind === "invoice" && !!doc.payments?.length,
-  );
+  const pricedPages = doc.menuOnly
+    ? []
+    : layoutPricedPages(
+        doc.items,
+        doc.payments ?? [],
+        doc.kind === "invoice" && !!doc.payments?.length,
+      );
   const contentStyle = { "--doc-base": `${org.fontSize}px` } as React.CSSProperties;
   const headingStyle = { color: org.headingColor };
   const bodyStyle = { color: org.bodyColor };
@@ -490,13 +499,15 @@ export function DocumentView({
                         <li key={j}>{m}</li>
                       ))}
                     </ol>
-                    <div
-                      className="mt-1 border-t border-dotted border-gray-300 pt-1 pl-3 text-left doc-text-xs font-semibold"
-                      style={headingStyle}
-                    >
-                      {fmtMoney(it.rate, cur)}
-                      {it.unit ? ` / ${it.unit}` : ""}
-                    </div>
+                    {!doc.menuOnly && (
+                      <div
+                        className="mt-1 border-t border-dotted border-gray-300 pt-1 pl-3 text-left doc-text-xs font-semibold"
+                        style={headingStyle}
+                      >
+                        {fmtMoney(it.rate, cur)}
+                        {it.unit ? ` / ${it.unit}` : ""}
+                      </div>
+                    )}
                   </div>
                 </div>
               );

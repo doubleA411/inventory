@@ -1,0 +1,1 @@
+ALTER TABLE "quotations" ADD COLUMN "apply_gst" boolean DEFAULT true NOT NULL;
