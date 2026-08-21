@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   expenseCategories,
@@ -156,9 +156,12 @@ export async function getExpenseLedger(
   const wantExpenses = !filters.category || filters.category !== "stock";
   const rows: LedgerRow[] = [];
 
-  // An event's stock usage is recorded against its converted invoice, not the
-  // quotation directly (that's how stock_movements already works) — so
-  // filtering stock rows by event means resolving the quotation's invoice.
+  // Stock usage now carries the event directly (stock_movements.quotationId),
+  // set when the cooking is logged rather than when the job is invoiced. The
+  // old route — resolve the quotation's converted invoice and match on
+  // invoiceId — is kept as a fallback so rows created before that column
+  // existed, or logged against an invoice with no originating quotation, still
+  // report. Matching either way means no event silently loses its costs.
   let eventInvoiceId: string | null = null;
   if (filters.quotationId) {
     const [q] = await db
@@ -169,7 +172,7 @@ export async function getExpenseLedger(
     eventInvoiceId = q?.convertedInvoiceId ?? null;
   }
 
-  if (wantStock && (!filters.quotationId || eventInvoiceId)) {
+  if (wantStock) {
     const conds = [
       eq(stockMovements.organizationId, orgId),
       sql`${stockMovements.type} in ('usage','waste')`,
@@ -184,7 +187,16 @@ export async function getExpenseLedger(
         lte(sql`(${stockMovements.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`, filters.to),
       );
     }
-    if (eventInvoiceId) conds.push(eq(stockMovements.invoiceId, eventInvoiceId));
+    if (filters.quotationId) {
+      conds.push(
+        eventInvoiceId
+          ? or(
+              eq(stockMovements.quotationId, filters.quotationId),
+              eq(stockMovements.invoiceId, eventInvoiceId),
+            )!
+          : eq(stockMovements.quotationId, filters.quotationId),
+      );
+    }
 
     const stockRows = await db
       .select({

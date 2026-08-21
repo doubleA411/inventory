@@ -302,11 +302,27 @@ export const stockMovements = pgTable(
     invoiceId: uuid("invoice_id").references(() => invoices.id, {
       onDelete: "set null",
     }),
+    // For usage: which function the ingredients were cooked for.
+    //
+    // This is the one that matters for profitability. Attribution used to run
+    // only through invoiceId, which meant an event's ingredient cost could not
+    // be recorded until the invoice existed — but caterers cook first and bill
+    // afterwards, so everything used before invoicing was orphaned into the
+    // day's stock-usage total and never reached the function it paid for. A
+    // booking that never converted could never receive costs at all.
+    //
+    // Set directly from the "which function is this for?" picker, which offers
+    // every quotation including drafts — the same list the expense form uses,
+    // so both finally answer the same question the same way.
+    quotationId: uuid("quotation_id").references(() => quotations.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("movements_product_idx").on(t.productId),
     index("movements_org_created_idx").on(t.organizationId, t.createdAt),
+    index("movements_quotation_idx").on(t.quotationId),
   ],
 );
 
@@ -430,6 +446,13 @@ export const quotations = pgTable(
     validUntil: date("valid_until"),
     // Mandapam / event venue — specific to this booking, not the customer.
     venue: text("venue"),
+    // The function date itself — distinct from the per-line-item eventDate
+    // (quotationItems.eventDate), which groups a multi-day function's menu
+    // pages by session and is optional/opt-in. This is the one always-there
+    // date the "upcoming events" widget sorts and filters on; falls back to
+    // the earliest item-level date for quotations created before this
+    // existed (see listUpcomingEvents).
+    eventDate: date("event_date"),
     placeOfSupplyStateCode: text("place_of_supply_state_code"),
     // Totals (stored in the org currency)
     subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull().default("0"),
@@ -445,6 +468,17 @@ export const quotations = pgTable(
     convertedInvoiceId: uuid("converted_invoice_id"),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     approvedBy: uuid("approved_by").references(() => users.id, { onDelete: "set null" }),
+    // A quotation becomes a real booking — not just a maybe — one of two
+    // ways: money changes hands (advanceAmount) or staff say so outright
+    // (takenAt). Neither implies "accepted": a customer can accept a price
+    // without committing to the date, so the "upcoming events" widget gates
+    // on this, not on status. Null means no advance recorded; a set value
+    // is always > 0 (see recordQuotationAdvanceCore) — clearing a mistaken
+    // entry nulls it out rather than setting it to 0.
+    advanceAmount: numeric("advance_amount", { precision: 14, scale: 2 }),
+    advanceRecordedAt: timestamp("advance_recorded_at", { withTimezone: true }),
+    takenAt: timestamp("taken_at", { withTimezone: true }),
+    takenBy: uuid("taken_by").references(() => users.id, { onDelete: "set null" }),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     // Public view link token (e.g. for WhatsApp) — null until generated,
@@ -677,6 +711,18 @@ export const expensesRelations = relations(expenses, ({ one }) => ({
 // A product is never tied to one fixed vendor — vendor is recorded per
 // purchase (bill), same reasoning as customers not being tied to one venue.
 // ===========================================================================
+/**
+ * Where one chunk of a vendor payment landed. A single "I paid them ₹5,000"
+ * can split across several of these (see recordVendorPaymentCore): some onto
+ * open bills, some onto the carried-over opening balance, the remainder left
+ * as credit with the vendor.
+ */
+export const paymentAppliedToEnum = pgEnum("payment_applied_to", [
+  "bill",
+  "opening_balance",
+  "credit",
+]);
+
 export const purchaseBillStatusEnum = pgEnum("purchase_bill_status", [
   "active",
   "cancelled",
@@ -701,6 +747,14 @@ export const vendors = pgTable(
     notes: text("notes"),
     // Amount already owed to this vendor before they were added to the
     // system (a carried-over balance), separate from anything billed here.
+    //
+    // This is the figure the caterer typed at onboarding and it is never
+    // written to again. It used to be decremented as it was paid off, which
+    // meant the number on screen drifted away from what they entered and the
+    // original was lost for good — a mistyped ₹15,000 could not be traced back
+    // once part of it had been paid. How much of it is still outstanding is
+    // derived instead, from the payments allocated to it (appliedTo =
+    // "opening_balance"); see vendorBalance() in purchase-queries.ts.
     openingBalance: numeric("opening_balance", { precision: 14, scale: 2 })
       .notNull()
       .default("0"),
@@ -771,6 +825,13 @@ export const purchaseBillPayments = pgTable(
       onDelete: "cascade",
     }),
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    // What this chunk of money was put against. Previously this had to be
+    // inferred — a bill payment by purchaseBillId, an opening-balance payment
+    // by searching the free-text note for a magic phrase — which meant a
+    // caterer who happened to type that phrase into their own note had their
+    // payment silently misfiled. Stated outright instead, so every rupee can
+    // be counted exactly once and none of it falls between the buckets.
+    appliedTo: paymentAppliedToEnum("applied_to").notNull().default("bill"),
     method: paymentMethodEnum("method").notNull().default("cash"),
     reference: text("reference"),
     paidAt: date("paid_at").notNull().defaultNow(),
@@ -873,6 +934,62 @@ export const purchaseBillItemsRelations = relations(purchaseBillItems, ({ one })
   }),
 }));
 
+// ---------------------------------------------------------------------------
+// Activity log
+// ---------------------------------------------------------------------------
+
+/**
+ * An append-only record of actions that take money back off the books.
+ *
+ * Reversing a payment deletes the payment row outright — that's the point, the
+ * balance has to go back to being due — which means without this table the
+ * money simply vanishes from history and nobody can answer "who undid this,
+ * and when". Staff share a device in practice, so "the owner did it" is not a
+ * safe assumption; the user is recorded per action.
+ *
+ * Deliberately not a general event bus: rows are written only where something
+ * irreversible happens to a recorded amount, so the log stays short enough to
+ * read as a list rather than needing its own search.
+ */
+export const activityActionEnum = pgEnum("activity_action", [
+  "payment_reversed",
+  "vendor_payment_reversed",
+]);
+
+export const activityLog = pgTable(
+  "activity_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    action: activityActionEnum("action").notNull(),
+    // What the action happened to. Kept as a loose (type, id) pair rather than
+    // a foreign key because the row it describes is usually gone by the time
+    // this is written — that's what made it worth logging.
+    entityType: text("entity_type").notNull(),
+    entityId: uuid("entity_id"),
+    // Where to send someone reading the log. Survives the entity itself.
+    invoiceId: uuid("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+    vendorId: uuid("vendor_id").references(() => vendors.id, { onDelete: "set null" }),
+    amount: numeric("amount", { precision: 14, scale: 2 }),
+    // Plain-language sentence, written at log time. Stored rather than
+    // rebuilt on read so the entry still makes sense after the thing it
+    // describes has been renamed or deleted.
+    summary: text("summary").notNull(),
+    // Who and when. userId is set null rather than cascading if the staff
+    // member is later removed — the action still happened.
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    userName: text("user_name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("activity_log_org_idx").on(t.organizationId, t.createdAt),
+    index("activity_log_invoice_idx").on(t.invoiceId),
+    index("activity_log_vendor_idx").on(t.vendorId),
+  ],
+);
+
 export type Customer = typeof customers.$inferSelect;
 export type Quotation = typeof quotations.$inferSelect;
 export type QuotationItem = typeof quotationItems.$inferSelect;
@@ -893,3 +1010,5 @@ export type PurchaseBillStatus = (typeof purchaseBillStatusEnum.enumValues)[numb
 export type PurchaseList = typeof purchaseLists.$inferSelect;
 export type PurchaseListItem = typeof purchaseListItems.$inferSelect;
 export type PurchaseListStatus = (typeof purchaseListStatusEnum.enumValues)[number];
+export type ActivityLogEntry = typeof activityLog.$inferSelect;
+export type ActivityAction = (typeof activityActionEnum.enumValues)[number];

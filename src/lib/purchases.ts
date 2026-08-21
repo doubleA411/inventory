@@ -17,6 +17,8 @@ import {
 import { applyMovement } from "@/lib/stock";
 import { roundQty } from "@/lib/units";
 import { financialYear, formatDocNumber } from "@/lib/tax";
+import { fmtMoney } from "@/lib/utils";
+import { logActivity, actorName } from "@/lib/activity";
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -365,10 +367,12 @@ async function releaseOverpayment(
     excess = round2(excess - take);
     const note = [p.note, `Released from ${bill.number}`].filter(Boolean).join(" — ");
     if (take >= amount - 1e-9) {
-      // Whole payment comes off the bill; it stays against the vendor.
+      // Whole payment comes off the bill; it stays against the vendor as
+      // credit. Marking it as such is what keeps it visible in their balance —
+      // this is exactly the money that used to go missing from the header.
       await tx
         .update(purchaseBillPayments)
-        .set({ purchaseBillId: null, note })
+        .set({ purchaseBillId: null, appliedTo: "credit", note })
         .where(eq(purchaseBillPayments.id, p.id));
     } else {
       await tx
@@ -380,6 +384,7 @@ async function releaseOverpayment(
         vendorId: p.vendorId,
         purchaseBillId: null,
         amount: String(round2(take)),
+        appliedTo: "credit",
         method: p.method,
         reference: p.reference,
         paidAt: p.paidAt,
@@ -453,6 +458,7 @@ export async function recordVendorPaymentCore(
         vendorId: d.vendorId,
         purchaseBillId: bill.id,
         amount: String(chunk),
+        appliedTo: "bill",
         method: d.method,
         reference: d.reference || null,
         paidAt: d.paidAt || undefined,
@@ -468,25 +474,39 @@ export async function recordVendorPaymentCore(
     // Anything left after clearing every open bill goes toward the vendor's
     // carried-over opening balance next, so "due" on the vendor page (which
     // includes it) actually reflects the payment instead of staying stuck.
+    //
+    // The vendor's openingBalance column is NOT written to — it holds the
+    // figure the caterer entered at onboarding, and overwriting it lost the
+    // original the moment any of it was paid. What's left is derived from the
+    // payments allocated here instead (see computeVendorBalance).
     if (remaining > 0) {
       const [vendor] = await tx
         .select({ openingBalance: vendors.openingBalance })
         .from(vendors)
         .where(and(eq(vendors.id, d.vendorId), eq(vendors.organizationId, orgId)))
         .limit(1);
-      const openingDue = round2(Number(vendor?.openingBalance ?? 0));
+      const [paidSoFar] = await tx
+        .select({ total: sql<string>`coalesce(sum(${purchaseBillPayments.amount}), 0)` })
+        .from(purchaseBillPayments)
+        .where(
+          and(
+            eq(purchaseBillPayments.organizationId, orgId),
+            eq(purchaseBillPayments.vendorId, d.vendorId),
+            eq(purchaseBillPayments.appliedTo, "opening_balance"),
+          ),
+        );
+      const openingDue = round2(
+        Math.max(0, Number(vendor?.openingBalance ?? 0) - Number(paidSoFar?.total ?? 0)),
+      );
       if (openingDue > 0) {
         const chunk = Math.min(openingDue, remaining);
         remaining = round2(remaining - chunk);
-        await tx
-          .update(vendors)
-          .set({ openingBalance: String(round2(openingDue - chunk)) })
-          .where(eq(vendors.id, d.vendorId));
         await tx.insert(purchaseBillPayments).values({
           organizationId: orgId,
           vendorId: d.vendorId,
           purchaseBillId: null,
           amount: String(chunk),
+          appliedTo: "opening_balance",
           method: d.method,
           reference: d.reference || null,
           paidAt: d.paidAt || undefined,
@@ -505,6 +525,7 @@ export async function recordVendorPaymentCore(
         vendorId: d.vendorId,
         purchaseBillId: null,
         amount: String(remaining),
+        appliedTo: "credit",
         method: d.method,
         reference: d.reference || null,
         paidAt: d.paidAt || undefined,
@@ -526,6 +547,114 @@ export async function recordVendorPaymentCore(
 export const OPENING_BALANCE_NOTE = "Applied to opening balance";
 
 /**
+ * Spend a vendor's existing credit on their open bills, oldest first.
+ *
+ * Credit already offsets the vendor's balance the moment it exists, so this
+ * moves no money — it settles *which* bills that money paid for. Without it
+ * the vendor page contradicts itself: the header reads "nothing owed" while a
+ * bill underneath still shows a due, because no payment row was ever attached
+ * to it.
+ *
+ * Credit rows are consumed whole where possible and split only on the last
+ * one, and each consuming row keeps the original's paidAt — the money really
+ * did leave the caterer's hands on that earlier date, and dating it today
+ * would misreport when they paid.
+ */
+export async function applyVendorCreditCore(
+  orgId: string,
+  userId: string,
+  vendorId: string,
+): Promise<{ ok: true; applied: number; bills: number } | { ok: false; error: string }> {
+  try {
+    return await db.transaction(async (tx) => {
+      const credits = await tx
+        .select()
+        .from(purchaseBillPayments)
+        .where(
+          and(
+            eq(purchaseBillPayments.organizationId, orgId),
+            eq(purchaseBillPayments.vendorId, vendorId),
+            eq(purchaseBillPayments.appliedTo, "credit"),
+          ),
+        )
+        .orderBy(asc(purchaseBillPayments.paidAt), asc(purchaseBillPayments.createdAt));
+      const available = round2(credits.reduce((sum, c) => sum + Number(c.amount), 0));
+      if (available <= 0) {
+        return { ok: false as const, error: "There's no credit with this vendor to use." };
+      }
+
+      const openBills = await tx
+        .select()
+        .from(purchaseBills)
+        .where(
+          and(
+            eq(purchaseBills.organizationId, orgId),
+            eq(purchaseBills.vendorId, vendorId),
+            eq(purchaseBills.status, "active"),
+          ),
+        )
+        .orderBy(asc(purchaseBills.billDate), asc(purchaseBills.createdAt));
+
+      let pot = available;
+      let applied = 0;
+      let billsTouched = 0;
+      for (const bill of openBills) {
+        if (pot <= 0) break;
+        const due = round2(Number(bill.total) - Number(bill.amountPaid));
+        if (due <= 0) continue;
+        const chunk = round2(Math.min(due, pot));
+        pot = round2(pot - chunk);
+        applied = round2(applied + chunk);
+        billsTouched += 1;
+
+        // A row per bill, exactly as a cash payment would land — so
+        // reverseVendorPaymentCore can unwind each bill by its own amount
+        // instead of taking the whole settlement off whichever bill came first.
+        await tx.insert(purchaseBillPayments).values({
+          organizationId: orgId,
+          vendorId,
+          purchaseBillId: bill.id,
+          amount: String(chunk),
+          appliedTo: "bill",
+          method: "other",
+          note: "Settled from credit already with this vendor",
+          createdBy: userId,
+        });
+        await tx
+          .update(purchaseBills)
+          .set({ amountPaid: String(round2(Number(bill.amountPaid) + chunk)) })
+          .where(eq(purchaseBills.id, bill.id));
+      }
+
+      if (applied <= 0) {
+        return { ok: false as const, error: "There are no unpaid bills to put this credit on." };
+      }
+
+      // Draw the applied total down across the credit rows, oldest first.
+      let toDraw = applied;
+      for (const credit of credits) {
+        if (toDraw <= 0) break;
+        const amount = Number(credit.amount);
+        const take = round2(Math.min(amount, toDraw));
+        toDraw = round2(toDraw - take);
+        if (take >= amount - 1e-9) {
+          await tx.delete(purchaseBillPayments).where(eq(purchaseBillPayments.id, credit.id));
+        } else {
+          await tx
+            .update(purchaseBillPayments)
+            .set({ amount: String(round2(amount - take)) })
+            .where(eq(purchaseBillPayments.id, credit.id));
+        }
+      }
+
+      return { ok: true as const, applied, bills: billsTouched };
+    });
+  } catch {
+    return { ok: false, error: "Could not use that credit." };
+  }
+}
+
+/**
  * Undo a recorded vendor payment — the whole recording, not one allocation row.
  *
  * recordVendorPaymentCore turns one "I paid them ₹5,000" into several rows (a
@@ -541,6 +670,7 @@ export const OPENING_BALANCE_NOTE = "Applied to opening balance";
  */
 export async function reverseVendorPaymentCore(
   orgId: string,
+  userId: string,
   paymentId: string,
 ): Promise<{ ok: true; amount: number; rows: number } | { ok: false; error: string }> {
   try {
@@ -581,7 +711,11 @@ export async function reverseVendorPaymentCore(
         const rowAmount = Number(row.amount);
         amount = round2(amount + rowAmount);
 
-        if (row.purchaseBillId) {
+        // Only a bill payment needs unwinding. An opening-balance chunk and a
+        // credit chunk both had their effect *derived* from this row, so
+        // deleting it is the whole reversal — the vendor's openingBalance is
+        // never written to, and what's left of it recomputes on the next read.
+        if (row.appliedTo === "bill" && row.purchaseBillId) {
           const [bill] = await tx
             .select({ amountPaid: purchaseBills.amountPaid })
             .from(purchaseBills)
@@ -595,22 +729,27 @@ export async function reverseVendorPaymentCore(
               })
               .where(eq(purchaseBills.id, row.purchaseBillId));
           }
-        } else if (row.vendorId && row.note?.includes(OPENING_BALANCE_NOTE)) {
-          const [vendor] = await tx
-            .select({ openingBalance: vendors.openingBalance })
-            .from(vendors)
-            .where(and(eq(vendors.id, row.vendorId), eq(vendors.organizationId, orgId)))
-            .limit(1);
-          if (vendor) {
-            await tx
-              .update(vendors)
-              .set({ openingBalance: String(round2(Number(vendor.openingBalance) + rowAmount)) })
-              .where(eq(vendors.id, row.vendorId));
-          }
         }
 
         await tx.delete(purchaseBillPayments).where(eq(purchaseBillPayments.id, row.id));
       }
+
+      // Logged inside the transaction: the rows are gone once this commits,
+      // so without an entry here there is nothing left to say who took the
+      // money back off the vendor's ledger, or when.
+      await logActivity(tx, {
+        orgId,
+        action: "vendor_payment_reversed",
+        entityType: "vendor_payment",
+        entityId: payment.id,
+        vendorId: payment.vendorId,
+        amount,
+        summary: `Reversed a ${fmtMoney(amount)} vendor payment${
+          group.length > 1 ? ` (${group.length} allocations)` : ""
+        }`,
+        userId,
+        userName: await actorName(tx, userId),
+      });
 
       return { ok: true as const, amount, rows: group.length };
     });

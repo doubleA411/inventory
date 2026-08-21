@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Share2, Copy, Check, X } from "lucide-react";
+import { ConfirmButton } from "@/components/confirm-button";
 
 export function ShareLink({
   initialToken,
@@ -35,13 +36,10 @@ export function ShareLink({
     });
   }
 
-  function revoke() {
-    if (!confirm("Revoke this share link? The old link stops working immediately.")) return;
-    start(async () => {
-      await onRevoke();
-      setToken(null);
-      router.refresh();
-    });
+  async function revoke() {
+    await onRevoke();
+    setToken(null);
+    router.refresh();
   }
 
   function copy() {
@@ -70,9 +68,16 @@ export function ShareLink({
         {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
         {copied ? "Copied" : "Copy link"}
       </button>
-      <button type="button" className="btn-ghost" onClick={revoke} disabled={pending}>
-        <X className="h-4 w-4" /> Revoke
-      </button>
+      <ConfirmButton
+        icon={<X className="h-4 w-4" />}
+        label="Revoke"
+        question="Revoke this link?"
+        detail="Anyone who already has it stops being able to open it."
+        confirmLabel="Revoke link"
+        busyLabel="Revoking…"
+        disabled={pending}
+        onConfirm={revoke}
+      />
     </div>
   );
 }

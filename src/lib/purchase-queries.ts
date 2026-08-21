@@ -47,7 +47,33 @@ export async function listVendors(orgId: string) {
     .where(eq(vendors.organizationId, orgId))
     .groupBy(vendors.id)
     .orderBy(asc(vendors.name));
-  return rows;
+
+  // Payment splits come from a second pass rather than another join: joining
+  // both bills and payments in one query multiplies the rows and inflates
+  // every sum. Grouped in SQL, matched up in JS.
+  const splits = await db
+    .select({
+      vendorId: purchaseBillPayments.vendorId,
+      appliedTo: purchaseBillPayments.appliedTo,
+      total: sql<string>`coalesce(sum(${purchaseBillPayments.amount}), 0)`,
+    })
+    .from(purchaseBillPayments)
+    .where(eq(purchaseBillPayments.organizationId, orgId))
+    .groupBy(purchaseBillPayments.vendorId, purchaseBillPayments.appliedTo);
+
+  const splitFor = (vendorId: string, kind: string) =>
+    Number(splits.find((r) => r.vendorId === vendorId && r.appliedTo === kind)?.total ?? 0);
+
+  return rows.map((r) => ({
+    ...r,
+    balance: computeVendorBalance({
+      purchased: Number(r.purchased),
+      billsPaid: Number(r.paid),
+      openingEntered: Number(r.openingBalance),
+      openingPaid: splitFor(r.id, "opening_balance"),
+      credit: splitFor(r.id, "credit"),
+    }),
+  }));
 }
 
 export async function getVendor(orgId: string, id: string) {
@@ -140,6 +166,7 @@ export async function getPurchaseBillFull(orgId: string, id: string) {
     .select({
       id: purchaseBillPayments.id,
       amount: purchaseBillPayments.amount,
+      appliedTo: purchaseBillPayments.appliedTo,
       method: purchaseBillPayments.method,
       reference: purchaseBillPayments.reference,
       paidAt: purchaseBillPayments.paidAt,
@@ -153,24 +180,101 @@ export async function getPurchaseBillFull(orgId: string, id: string) {
   return { bill, items, vendor, payments: pays };
 }
 
-/** Org-wide vendor dues, for the vendors list header. */
+
+/**
+ * Every rupee that has moved between the caterer and one vendor, counted once.
+ *
+ * Four things flow through a vendor's balance and the old header only showed
+ * two of them: bills raised, payments put against those bills, payments put
+ * against the carried-over opening balance, and money handed over that fitted
+ * nowhere (an overpayment, or the excess released when a bill line is removed
+ * — see removePurchaseBillItemCore). That last bucket was counted in neither
+ * "paid" nor "due", so the app could tell a caterer they owed ₹410 while
+ * sitting on ₹2,000 of their money.
+ *
+ * openingBalance is the figure entered at onboarding and never rewritten; how
+ * much of it is left is derived here from the payments allocated to it.
+ */
+export type VendorBalance = {
+  /** Total of active bills raised in the app. */
+  purchased: number;
+  /** Every rupee handed to this vendor, whatever it was put against. */
+  paid: number;
+  /** The carried-over due as the caterer first entered it. */
+  openingEntered: number;
+  /** How much of that carried-over due is still outstanding. */
+  openingRemaining: number;
+  /** Money with the vendor that isn't against anything yet. */
+  credit: number;
+  /** Positive: still owed to the vendor. Zero when credit covers it. */
+  due: number;
+};
+
+export function computeVendorBalance(input: {
+  purchased: number;
+  billsPaid: number;
+  openingEntered: number;
+  openingPaid: number;
+  credit: number;
+}): VendorBalance {
+  const openingRemaining = round2(Math.max(0, input.openingEntered - input.openingPaid));
+  const owed = round2(input.purchased - input.billsPaid + openingRemaining);
+  // Credit is real money already handed over, so it offsets what's owed before
+  // anything is shown as due. Whatever it doesn't absorb stays as credit.
+  const due = round2(Math.max(0, owed - input.credit));
+  const credit = round2(Math.max(0, input.credit - owed));
+  return {
+    purchased: round2(input.purchased),
+    paid: round2(input.billsPaid + input.openingPaid + input.credit),
+    openingEntered: round2(input.openingEntered),
+    openingRemaining,
+    credit,
+    due,
+  };
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/** Payment totals for one vendor, split by what each chunk was put against. */
+export async function vendorPaymentTotals(orgId: string, vendorId: string) {
+  const rows = await db
+    .select({
+      appliedTo: purchaseBillPayments.appliedTo,
+      total: sql<string>`coalesce(sum(${purchaseBillPayments.amount}), 0)`,
+    })
+    .from(purchaseBillPayments)
+    .where(
+      and(
+        eq(purchaseBillPayments.organizationId, orgId),
+        eq(purchaseBillPayments.vendorId, vendorId),
+      ),
+    )
+    .groupBy(purchaseBillPayments.appliedTo);
+  const by = (k: string) => Number(rows.find((r) => r.appliedTo === k)?.total ?? 0);
+  return { bill: by("bill"), openingBalance: by("opening_balance"), credit: by("credit") };
+}
+
+/**
+ * Org-wide vendor dues, for the vendors list header.
+ *
+ * Deliberately the sum of each vendor's own due rather than one netted
+ * calculation: credit sitting with one supplier cannot pay a different one, so
+ * netting globally would understate what the caterer actually has to find.
+ * A vendor holding credit contributes zero here, never a negative.
+ */
 export async function vendorsSummary(orgId: string) {
-  const [rows, openingRows] = await Promise.all([
-    db
-      .select({
-        total: purchaseBills.total,
-        amountPaid: purchaseBills.amountPaid,
-      })
-      .from(purchaseBills)
-      .where(and(eq(purchaseBills.organizationId, orgId), eq(purchaseBills.status, "active"))),
-    db
-      .select({ openingBalance: vendors.openingBalance })
-      .from(vendors)
-      .where(eq(vendors.organizationId, orgId)),
-  ]);
-  const billsDue = rows.reduce((s, r) => s + (Number(r.total) - Number(r.amountPaid)), 0);
-  const openingDue = openingRows.reduce((s, r) => s + Number(r.openingBalance), 0);
-  return { billCount: rows.length, due: billsDue + openingDue };
+  const rows = await listVendors(orgId);
+  const [billCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(purchaseBills)
+    .where(and(eq(purchaseBills.organizationId, orgId), eq(purchaseBills.status, "active")));
+  return {
+    billCount: billCount?.count ?? 0,
+    due: round2(rows.reduce((s, r) => s + r.balance.due, 0)),
+    credit: round2(rows.reduce((s, r) => s + r.balance.credit, 0)),
+  };
 }
 
 /**
@@ -183,6 +287,7 @@ export async function listPaymentsForVendor(orgId: string, vendorId: string) {
     .select({
       id: purchaseBillPayments.id,
       amount: purchaseBillPayments.amount,
+      appliedTo: purchaseBillPayments.appliedTo,
       method: purchaseBillPayments.method,
       reference: purchaseBillPayments.reference,
       paidAt: purchaseBillPayments.paidAt,

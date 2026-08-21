@@ -9,7 +9,12 @@ import { logMovementAction, type ActionState } from "../actions";
 import type { MovementType } from "@/lib/db/schema";
 
 type Unit = { id: string; name: string; symbol: string };
-type InvoiceOption = { id: string; number: string; customerName: string | null };
+type EventOption = {
+  id: string;
+  number: string;
+  customerName: string | null;
+  eventDate: string | null;
+};
 type VendorOption = { id: string; name: string };
 
 const TABS: {
@@ -28,7 +33,7 @@ export function MovementPanel({
   productId,
   units,
   defaultUnitId,
-  invoices = [],
+  events = [],
   vendors = [],
   defaultVendorId,
   lastCostPrice,
@@ -36,7 +41,7 @@ export function MovementPanel({
   productId: string;
   units: Unit[];
   defaultUnitId: string;
-  invoices?: InvoiceOption[];
+  events?: EventOption[];
   vendors?: VendorOption[];
   defaultVendorId?: string | null;
   lastCostPrice?: number | null;
@@ -207,20 +212,31 @@ export function MovementPanel({
           </div>
         )}
 
-        {(type === "usage" || type === "waste") && invoices.length > 0 && (
+        {/* Attribution is to the function, not the bill. Offered for every
+            quotation including drafts, so ingredients can be booked to a job
+            on the day it is cooked rather than waiting for it to be invoiced.
+            Always rendered — hiding it until an invoice existed meant a new
+            caterer never discovered that costs could be attributed at all. */}
+        {(type === "usage" || type === "waste") && (
           <div>
-            <label className="label" htmlFor="invoiceId">
-              For bill (optional)
+            <label className="label" htmlFor="quotationId">
+              Which function is this for? (optional)
             </label>
-            <select id="invoiceId" name="invoiceId" className="input" defaultValue="">
-              <option value="">— Not linked to a bill —</option>
-              {invoices.map((inv) => (
-                <option key={inv.id} value={inv.id}>
-                  {inv.number}
-                  {inv.customerName ? ` · ${inv.customerName}` : ""}
-                </option>
-              ))}
-            </select>
+            {events.length > 0 ? (
+              <select id="quotationId" name="quotationId" className="input" defaultValue="">
+                <option value="">— General kitchen use —</option>
+                {events.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.customerName ?? "Walk-in"}
+                    {e.eventDate ? ` · ${e.eventDate}` : ""} · {e.number}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-xs text-(--color-muted)">
+                No functions yet — this will count as general kitchen cost.
+              </p>
+            )}
           </div>
         )}
 

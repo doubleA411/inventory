@@ -45,23 +45,69 @@ async function maybeRestockFromProductForm(
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const { restockQty, restockPaidNow } = parsed.data;
-  if (!restockQty || restockQty <= 0 || !preferredVendorId) return;
-  if (costPrice == null) {
-    return { error: "Cost price is required to log a purchase." };
-  }
-
-  const result = await restockWithVendor(organization, userId, {
+  return stockOnSave(organization, userId, {
     productId,
+    stockUnitId,
     quantity: restockQty,
-    unitId: stockUnitId,
-    unitCost: costPrice ?? null,
+    unitCost: costPrice,
     vendorId: preferredVendorId,
     paidNow: restockPaidNow,
   });
-  if (!result.ok) return { error: result.error };
-  revalidatePath("/vendors");
-  revalidatePath(`/vendors/${preferredVendorId}`);
+}
+
+/**
+ * Put opening stock on a product as part of saving it.
+ *
+ * "I bought 5 kg of paneer" is one action, and it used to take three: create
+ * the product, find it again in a list of ninety, then restock it. This is the
+ * same restock path either way — with a vendor it also raises the purchase
+ * bill, without one it just creates the batch, so tracking a supplier stays
+ * optional rather than being the price of entry.
+ */
+async function stockOnSave(
+  organization: Parameters<typeof restockWithVendor>[0],
+  userId: string,
+  input: {
+    productId: string;
+    stockUnitId: string;
+    quantity?: number | null;
+    unitCost?: number | null;
+    vendorId?: string | null;
+    paidNow?: number | null;
+  },
+): Promise<{ error?: string } | void> {
+  const { quantity, unitCost, vendorId } = input;
+  if (!quantity || quantity <= 0) return;
+  if (unitCost == null) {
+    return { error: "Enter a cost per unit so this stock can be valued." };
+  }
+
+  if (vendorId) {
+    const result = await restockWithVendor(organization, userId, {
+      productId: input.productId,
+      quantity,
+      unitId: input.stockUnitId,
+      unitCost,
+      vendorId,
+      paidNow: input.paidNow,
+    });
+    if (!result.ok) return { error: result.error };
+    revalidatePath("/vendors");
+    revalidatePath(`/vendors/${vendorId}`);
+  } else {
+    const result = await applyMovement({
+      organizationId: organization.id,
+      productId: input.productId,
+      type: "restock",
+      quantity,
+      unitId: input.stockUnitId,
+      userId,
+      unitCost,
+    });
+    if (!result.ok) return { error: result.error };
+  }
   revalidatePath("/movements");
+  revalidatePath("/dashboard");
 }
 
 /**
@@ -70,25 +116,45 @@ async function maybeRestockFromProductForm(
  * success, so it can't use the redirect-on-success form-action pattern the
  * edit page's ProductForm relies on.
  */
-export async function createProductQuick(input: {
-  name: string;
-  code?: string | null;
-  categoryId?: string | null;
-  stockUnitId: string;
-  reorderLevel?: number;
-  costPrice?: number | null;
-  preferredVendorId?: string | null;
-  notes?: string | null;
-}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-  const { organization } = await requireRole("admin");
+export async function createProductQuick(
+  input: {
+    name: string;
+    code?: string | null;
+    categoryId?: string | null;
+    stockUnitId: string;
+    reorderLevel?: number;
+    costPrice?: number | null;
+    preferredVendorId?: string | null;
+    notes?: string | null;
+  },
+  /** Optional opening stock, so buying something new is one step, not three. */
+  opening?: { quantity?: number | null; paidNow?: number | null },
+): Promise<
+  | { ok: true; id: string; stockError?: string }
+  | { ok: false; error: string }
+> {
+  const { organization, user } = await requireRole("admin");
   const parsed = productSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const result = await createProduct(organization.id, parsed.data);
   if (!result.ok) return result;
+
+  // Reported separately rather than failing the whole call: the product itself
+  // saved fine, and telling someone "could not create product" when it exists
+  // would send them off to create a duplicate.
+  const stock = await stockOnSave(organization, user.id, {
+    productId: result.id,
+    stockUnitId: parsed.data.stockUnitId,
+    quantity: opening?.quantity,
+    unitCost: parsed.data.costPrice,
+    vendorId: parsed.data.preferredVendorId,
+    paidNow: opening?.paidNow,
+  });
+
   revalidatePath("/products");
-  return { ok: true, id: result.id };
+  return { ok: true, id: result.id, stockError: stock?.error };
 }
 
 export async function updateProductAction(
@@ -217,6 +283,7 @@ const movementSchema = z
     unitCost: z.coerce.number().min(0).optional().nullable(),
     note: z.string().trim().optional().nullable(),
     invoiceId: z.string().uuid().optional().nullable(),
+    quotationId: z.string().uuid().optional().nullable(),
     vendorId: z.string().uuid().optional().nullable(),
     paidNow: z.coerce.number().min(0).optional().nullable(),
   })
@@ -248,6 +315,7 @@ export async function logMovementAction(
     unitCost: str(formData.get("unitCost")),
     note: str(formData.get("note")),
     invoiceId: str(formData.get("invoiceId")) ?? undefined,
+    quotationId: str(formData.get("quotationId")) ?? undefined,
     vendorId: str(formData.get("vendorId")) ?? undefined,
     paidNow: str(formData.get("paidNow")),
   });
@@ -286,6 +354,8 @@ export async function logMovementAction(
       unitCost: d.type === "restock" ? d.unitCost ?? null : null,
       invoiceId:
         d.type === "usage" || d.type === "waste" ? d.invoiceId ?? null : null,
+      quotationId:
+        d.type === "usage" || d.type === "waste" ? d.quotationId ?? null : null,
     });
     if (!result.ok) return { error: result.error };
   }

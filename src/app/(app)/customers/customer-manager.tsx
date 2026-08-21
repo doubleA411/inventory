@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Pencil, Plus, Search, Trash2, UserPlus } from "lucide-react";
+import { ConfirmButton } from "@/components/confirm-button";
 import { saveCustomer, deleteCustomer } from "./actions";
 import { Sheet } from "@/components/sheet";
 
@@ -87,14 +88,6 @@ export function CustomerManager({ customers }: { customers: Cust[] }) {
     });
   }
 
-  function remove(id: string) {
-    if (!confirm("Delete this customer?")) return;
-    start(async () => {
-      await deleteCustomer(id);
-      router.refresh();
-    });
-  }
-
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setDuplicate(null);
     setF({ ...f, [k]: e.target.value });
@@ -154,9 +147,19 @@ export function CustomerManager({ customers }: { customers: Cust[] }) {
                     <button className="btn-ghost" onClick={() => openEdit(c)} title="Edit">
                       <Pencil className="h-4 w-4" />
                     </button>
-                    <button className="btn-ghost" onClick={() => remove(c.id)} title="Delete">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <ConfirmButton
+                      compact
+                      icon={<Trash2 className="h-4 w-4" />}
+                      label=""
+                      triggerTitle="Delete customer"
+                      question="Delete this customer?"
+                      confirmLabel="Delete customer"
+                      busyLabel="Deleting…"
+                      onConfirm={async () => {
+                        await deleteCustomer(c.id);
+                        router.refresh();
+                      }}
+                    />
                   </td>
                 </tr>
               ))}

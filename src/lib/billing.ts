@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   invoices,
@@ -11,7 +11,9 @@ import {
   payments,
   type Organization,
 } from "@/lib/db/schema";
-import { computeTotals, financialYear, formatDocNumber } from "@/lib/tax";
+import { computeTotals, financialYear, formatDocNumber, round2 } from "@/lib/tax";
+import { fmtMoney } from "@/lib/utils";
+import { logActivity, actorName } from "@/lib/activity";
 
 // Menu dish names and an event/function date under a line item — printed as
 // a menu page ahead of the priced document. Not used for pricing.
@@ -57,6 +59,8 @@ export const quoteSchema = z.object({
   issueDate: z.string().min(1),
   validUntil: z.string().optional().nullable(),
   venue: z.string().trim().optional().nullable(),
+  // The function date — separate from validUntil (the quote's own expiry).
+  eventDate: z.string().trim().optional().nullable(),
   notes: z.string().trim().optional().nullable(),
   terms: z.string().trim().optional().nullable(),
   // Per-quotation override of the org's GST default — off hides GST from the
@@ -262,17 +266,65 @@ export async function revokeInvoiceApprovalCore(orgId: string, id: string): Prom
     .where(and(eq(invoices.id, id), eq(invoices.organizationId, orgId)));
 }
 
-export async function deleteInvoiceCore(orgId: string, id: string): Promise<void> {
+/**
+ * Delete an invoice, unless money has been recorded against it.
+ *
+ * payments.invoiceId is ON DELETE CASCADE, so deleting a paid invoice takes
+ * its payment rows with it — the collected money disappears from the books
+ * with nothing left to reconcile against, and even the activity log can only
+ * say a payment was reversed, not that a whole invoice went. Cancelling keeps
+ * the document and its history while taking it out of the totals, which is
+ * what "this bill was a mistake" actually needs.
+ */
+export async function deleteInvoiceCore(
+  orgId: string,
+  id: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const [inv] = await db
+    .select({ number: invoices.number, amountPaid: invoices.amountPaid })
+    .from(invoices)
+    .where(and(eq(invoices.id, id), eq(invoices.organizationId, orgId)))
+    .limit(1);
+  if (!inv) return { ok: false, error: "That invoice no longer exists." };
+
+  const [{ count } = { count: 0 }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(payments)
+    .where(and(eq(payments.invoiceId, id), eq(payments.organizationId, orgId)));
+
+  if (count > 0 || Number(inv.amountPaid) > 0) {
+    return {
+      ok: false,
+      error: `${inv.number} has payments recorded against it, so deleting it would wipe that money from your books. Cancel it instead — that keeps the record and takes it out of your totals.`,
+    };
+  }
+
   await db
     .delete(invoices)
     .where(and(eq(invoices.id, id), eq(invoices.organizationId, orgId)));
+  return { ok: true };
 }
 
+export type PaymentResult =
+  | { ok: true }
+  | { ok: false; error: string; overpayment?: { due: number; amount: number } };
+
+/**
+ * Record a payment against an invoice.
+ *
+ * Refuses an amount larger than the balance due unless the caller passes
+ * `allowOverpayment`. Typing one zero too many is the commonest money mistake
+ * there is, and without this the invoice silently went to a negative Due
+ * rendered in the same red as genuinely overdue money. Overpayment stays
+ * possible — a customer rounding up is real — but it has to be answered for
+ * rather than happening by accident.
+ */
 export async function recordPaymentCore(
   orgId: string,
   userId: string,
   raw: PaymentInput,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  opts: { allowOverpayment?: boolean } = {},
+): Promise<PaymentResult> {
   const parsed = paymentSchema.safeParse(raw);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -285,6 +337,18 @@ export async function recordPaymentCore(
     .where(and(eq(invoices.id, d.invoiceId), eq(invoices.organizationId, orgId)))
     .limit(1);
   if (!inv) return { ok: false, error: "Invoice not found." };
+
+  const due = round2(Number(inv.total) - Number(inv.amountPaid));
+  if (!opts.allowOverpayment && d.amount > due) {
+    return {
+      ok: false,
+      error:
+        due > 0
+          ? `That's more than the ${fmtMoney(due)} still due on this bill.`
+          : "This bill is already fully paid.",
+      overpayment: { due, amount: d.amount },
+    };
+  }
 
   await db.transaction(async (tx) => {
     await tx.insert(payments).values({
@@ -319,9 +383,14 @@ export async function recordPaymentCore(
  * the invoice back under its total, the status steps back to "sent" (never
  * back to "draft" — being sent doesn't undo). Any other status (including
  * "cancelled") is left alone.
+ *
+ * The payment row is deleted, so the reversal is written to the activity log
+ * inside the same transaction — otherwise the money would leave the books with
+ * no record of who took it off or when.
  */
 export async function reverseInvoicePaymentCore(
   orgId: string,
+  userId: string,
   paymentId: string,
 ): Promise<{ ok: true; amount: number } | { ok: false; error: string }> {
   try {
@@ -340,7 +409,7 @@ export async function reverseInvoicePaymentCore(
         .limit(1);
       if (inv) {
         const amount = Number(payment.amount);
-        const newPaid = Math.max(0, Math.round((Number(inv.amountPaid) - amount) * 100) / 100);
+        const newPaid = Math.max(0, round2(Number(inv.amountPaid) - amount));
         const status =
           inv.status === "paid" && newPaid < Number(inv.total) ? "sent" : inv.status;
         await tx
@@ -351,7 +420,22 @@ export async function reverseInvoicePaymentCore(
 
       await tx.delete(payments).where(eq(payments.id, paymentId));
 
-      return { ok: true as const, amount: Number(payment.amount) };
+      const amount = Number(payment.amount);
+      await logActivity(tx, {
+        orgId,
+        action: "payment_reversed",
+        entityType: "payment",
+        entityId: payment.id,
+        invoiceId: payment.invoiceId,
+        amount,
+        summary: `Reversed a ${fmtMoney(amount)} ${payment.method.replace("_", " ")} payment${
+          inv ? ` on ${inv.number}` : ""
+        }`,
+        userId,
+        userName: await actorName(tx, userId),
+      });
+
+      return { ok: true as const, amount };
     });
   } catch {
     return { ok: false, error: "Could not reverse that payment." };
@@ -377,6 +461,25 @@ export async function saveQuotationCore(
     return { ok: false, error: "Add at least one line item." };
   }
 
+  // A converted quotation is frozen: its invoice is a document the customer
+  // already has, and editing the quotation afterwards silently produced two
+  // different prices for one job with nothing linking them. Duplicate is the
+  // way to quote a changed price — it starts a fresh quotation and leaves the
+  // issued invoice alone.
+  if (d.id) {
+    const [existing] = await db
+      .select({ status: quotations.status, number: quotations.number })
+      .from(quotations)
+      .where(and(eq(quotations.id, d.id), eq(quotations.organizationId, org.id)))
+      .limit(1);
+    if (existing?.status === "converted") {
+      return {
+        ok: false,
+        error: `${existing.number} has already been turned into an invoice, so it can't be changed. Use Duplicate to make a new quotation from it.`,
+      };
+    }
+  }
+
   const { placeCode, intraState } = await placeOfSupply(org, d.customerId);
   const gstEnabled = org.gstRegistered ? (d.applyGst ?? true) : false;
   const totals = computeTotals(
@@ -392,6 +495,7 @@ export async function saveQuotationCore(
         issueDate: d.issueDate,
         validUntil: d.validUntil || null,
         venue: d.venue || null,
+        eventDate: d.eventDate || null,
         placeOfSupplyStateCode: placeCode,
         subtotal: String(totals.subtotal),
         taxTotal: String(totals.taxTotal),
@@ -467,10 +571,36 @@ export async function setQuotationStatusCore(
     .where(and(eq(quotations.id, id), eq(quotations.organizationId, orgId)));
 }
 
-export async function deleteQuotationCore(orgId: string, id: string): Promise<void> {
+/**
+ * Delete a quotation, unless an invoice was already raised from it.
+ *
+ * A converted quotation is load-bearing: the invoice's quotationId and every
+ * linked expense's quotationId are ON DELETE SET NULL, so deleting it doesn't
+ * fail loudly — it quietly cuts the invoice loose and erases the expense-to-
+ * event links that the profitability figures are built from. Cancel the
+ * invoice instead if the job fell through; that keeps the trail.
+ */
+export async function deleteQuotationCore(
+  orgId: string,
+  id: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const [q] = await db
+    .select({ status: quotations.status, number: quotations.number })
+    .from(quotations)
+    .where(and(eq(quotations.id, id), eq(quotations.organizationId, orgId)))
+    .limit(1);
+  if (!q) return { ok: false, error: "That quotation no longer exists." };
+  if (q.status === "converted") {
+    return {
+      ok: false,
+      error: `${q.number} has an invoice raised from it, so it can't be deleted. Cancel the invoice instead if this job isn't happening.`,
+    };
+  }
+
   await db
     .delete(quotations)
     .where(and(eq(quotations.id, id), eq(quotations.organizationId, orgId)));
+  return { ok: true };
 }
 
 export async function approveQuotationCore(
@@ -488,6 +618,79 @@ export async function revokeQuotationApprovalCore(orgId: string, id: string): Pr
   await db
     .update(quotations)
     .set({ approvedAt: null, approvedBy: null })
+    .where(and(eq(quotations.id, id), eq(quotations.organizationId, orgId)));
+}
+
+export type AdvanceResult =
+  | { ok: true }
+  | { ok: false; error: string; overAdvance?: { total: number; amount: number } };
+
+/**
+ * Record (or correct) the advance/deposit collected for this booking. Not a
+ * payment ledger like invoice/vendor payments — just the one running total a
+ * caterer needs to know "has this date actually been paid for", set directly
+ * rather than accumulated, so a correction is just re-entering the right
+ * number. Passing 0 or null clears it back to "no advance recorded".
+ *
+ * Refuses an advance larger than the quotation total unless the caller passes
+ * `allowOverAdvance`. An advance is collected against a price that's already
+ * on the screen, so a figure above it is nearly always a stray zero — and it
+ * would otherwise ride through conversion into an invoice payment that
+ * overpays the bill (see convertToInvoiceCore).
+ */
+export async function recordQuotationAdvanceCore(
+  orgId: string,
+  id: string,
+  amount: number | null,
+  opts: { allowOverAdvance?: boolean } = {},
+): Promise<AdvanceResult> {
+  if (amount != null && !(amount >= 0)) {
+    return { ok: false, error: "Enter an amount of 0 or more." };
+  }
+
+  const [q] = await db
+    .select({ total: quotations.total })
+    .from(quotations)
+    .where(and(eq(quotations.id, id), eq(quotations.organizationId, orgId)))
+    .limit(1);
+  if (!q) return { ok: false, error: "That quotation no longer exists." };
+
+  const total = Number(q.total);
+  if (amount != null && !opts.allowOverAdvance && amount > total) {
+    return {
+      ok: false,
+      error: `That's more than the ${fmtMoney(total)} total of this quotation.`,
+      overAdvance: { total, amount },
+    };
+  }
+
+  const recorded = amount ? amount : null;
+  await db
+    .update(quotations)
+    .set({
+      advanceAmount: recorded != null ? String(recorded) : null,
+      advanceRecordedAt: recorded != null ? new Date() : null,
+    })
+    .where(and(eq(quotations.id, id), eq(quotations.organizationId, orgId)));
+  return { ok: true };
+}
+
+/** Explicitly confirm a booking with no advance down yet (a regular). */
+export async function markQuotationTakenCore(
+  orgId: string,
+  userId: string,
+  id: string,
+): Promise<void> {
+  await db
+    .update(quotations)
+    .set({ takenAt: new Date(), takenBy: userId })
+    .where(and(eq(quotations.id, id), eq(quotations.organizationId, orgId)));
+}
+
+export async function unmarkQuotationTakenCore(orgId: string, id: string): Promise<void> {
+  await db
+    .update(quotations)
+    .set({ takenAt: null, takenBy: null })
     .where(and(eq(quotations.id, id), eq(quotations.organizationId, orgId)));
 }
 
@@ -537,6 +740,22 @@ export async function convertToInvoiceCore(
     .update(quotations)
     .set({ status: "converted", convertedInvoiceId: res.id })
     .where(eq(quotations.id, id));
+
+  // Carry the booking advance over as the invoice's first payment — the
+  // money was already collected, so the invoice should open already
+  // partly paid, not re-ask for the full total. Payment method isn't
+  // tracked at the quotation stage (advanceAmount is just a running total),
+  // so this records it as "cash" and says where it actually came from in
+  // the note; staff can correct the method on the invoice if it wasn't.
+  if (Number(q.advanceAmount) > 0) {
+    await recordPaymentCore(org.id, userId, {
+      invoiceId: res.id,
+      amount: Number(q.advanceAmount),
+      method: "cash",
+      paidAt: q.advanceRecordedAt?.toISOString().slice(0, 10),
+      note: `Advance recorded on ${q.number}`,
+    });
+  }
 
   return { ok: true, invoiceId: res.id };
 }

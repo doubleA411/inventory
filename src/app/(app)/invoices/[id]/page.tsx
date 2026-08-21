@@ -9,6 +9,7 @@ import { fmtMoney, fmtDate } from "@/lib/utils";
 import { amountInWords } from "@/lib/tax";
 import { INVOICE_STATUS_META } from "@/lib/labels";
 import { ArrowLeft, Download, Pencil, Printer } from "lucide-react";
+import { invoiceActivity } from "@/lib/activity";
 import { PaymentForm } from "./payment-form";
 import { InvoicePaymentHistory } from "./payment-history";
 import { InvoiceActions } from "./invoice-actions";
@@ -26,6 +27,7 @@ export default async function InvoiceViewPage({
   const expenseSummary = invoice.quotationId
     ? await eventExpenseTotal(organization.id, invoice.quotationId)
     : { total: 0, count: 0 };
+  const activity = await invoiceActivity(organization.id, id);
   const cur = organization.currency;
   const approved = !!invoice.approvedAt;
   const isOwner = role === "owner";
@@ -77,9 +79,11 @@ export default async function InvoiceViewPage({
               </a>
             </>
           ) : (
-            <button className="btn-primary" disabled title="Needs owner approval first">
-              <Download className="h-4 w-4" /> Download PDF
-            </button>
+            // Says the reason in the page instead of hiding it in a hover
+            // tooltip that a phone never shows.
+            <span className="inline-flex items-center gap-2 rounded-lg bg-(--color-bg) px-3 py-2 text-sm text-(--color-muted)">
+              <Download className="h-4 w-4" /> PDF after the owner approves
+            </span>
           )}
           <Link href={`/invoices/${id}/edit`} className="btn-outline">
             <Pencil className="h-4 w-4" /> Edit
@@ -95,7 +99,7 @@ export default async function InvoiceViewPage({
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Items + totals */}
-        <div className="space-y-6 lg:col-span-2">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
           <div className="card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -226,18 +230,44 @@ export default async function InvoiceViewPage({
             </div>
           </div>
 
-          {due > 0 && invoice.status !== "cancelled" && (
-            <div className="card p-4">
-              <div className="mb-3 text-sm font-semibold">Record a payment</div>
-              <PaymentForm invoiceId={id} due={due} />
-            </div>
-          )}
+          {invoice.status !== "cancelled" &&
+            (due > 0 ? (
+              <div className="card p-4">
+                <div className="mb-3 text-sm font-semibold">Record a payment</div>
+                <PaymentForm invoiceId={id} due={due} currency={cur} />
+              </div>
+            ) : (
+              // Says why there's no form rather than just omitting it — a
+              // vanished form reads as a bug, especially after an overpayment.
+              <div className="card p-4 text-sm text-(--color-muted)">
+                {due < 0
+                  ? `This bill has been overpaid by ${fmtMoney(-due, cur)}. Reverse a payment below to correct it.`
+                  : "This bill is fully paid — nothing left to collect."}
+              </div>
+            ))}
 
           <div className="card">
             <div className="border-b border-(--color-border) px-4 py-3 text-sm font-semibold">
               Payment history
             </div>
             <InvoicePaymentHistory invoiceId={id} currency={cur} payments={payments} />
+            {activity.length > 0 && (
+              // Reversals delete the payment row, so without this the money
+              // would leave the books with no trace of who removed it.
+              <div className="border-t border-(--color-border) px-4 py-3">
+                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-(--color-muted)">
+                  Changes to payments
+                </div>
+                <ul className="space-y-1.5">
+                  {activity.map((a) => (
+                    <li key={a.id} className="text-xs text-(--color-muted)">
+                      {a.summary} — {a.userName ?? "a removed user"} on{" "}
+                      {fmtDate(a.createdAt.toISOString())}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
       </div>

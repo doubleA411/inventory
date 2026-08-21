@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Trash2 } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui";
 import { CostTrendBadge } from "@/components/cost-trend";
 import { ClickableRow, stopRowClick } from "@/components/clickable-row";
@@ -13,6 +13,7 @@ import {
   bulkSetCategoryAction,
   bulkSetActiveAction,
 } from "./actions";
+import { QuickMovementSheet, type QuickUnit, type QuickVendor, type QuickEvent } from "./quick-movement-sheet";
 import type { ProductRow } from "@/lib/queries";
 
 export function ProductsTable({
@@ -20,11 +21,17 @@ export function ProductsTable({
   categories,
   currency,
   canEdit,
+  units,
+  vendors,
+  events,
 }: {
   products: ProductRow[];
   categories: { id: string; name: string }[];
   currency: string;
   canEdit: boolean;
+  units: QuickUnit[];
+  vendors: QuickVendor[];
+  events: QuickEvent[];
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -32,6 +39,12 @@ export function ProductsTable({
   const [categoryChoice, setCategoryChoice] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [quick, setQuick] = useState<{
+    product: ProductRow;
+    mode: "restock" | "usage";
+  } | null>(null);
+  // Stable so the sheet's auto-close timer isn't reset by every parent render.
+  const closeQuick = useCallback(() => setQuick(null), []);
 
   const allSelected = products.length > 0 && selected.size === products.length;
   const someSelected = selected.size > 0 && !allSelected;
@@ -185,6 +198,12 @@ export function ProductsTable({
               <th className="px-4 py-3 text-right font-medium">In stock</th>
               <th className="px-4 py-3 text-right font-medium">Reorder at</th>
               <th className="px-4 py-3 font-medium">Status</th>
+              {/* Pinned to the right edge: on a phone the table scrolls
+                  sideways, and quick actions are worthless if you have to swipe
+                  to find them. */}
+              {canEdit && (
+                <th className="sticky right-0 bg-(--color-surface) px-4 py-3"></th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-(--color-border)">
@@ -246,12 +265,49 @@ export function ProductsTable({
                   <td className="px-4 py-3">
                     <Badge tone={status.tone}>{status.label}</Badge>
                   </td>
+                  {canEdit && (
+                    // The two things done daily, without leaving the list.
+                    <td
+                      className="sticky right-0 bg-(--color-surface) px-4 py-3 text-right whitespace-nowrap"
+                      onClick={stopRowClick}
+                    >
+                      <button
+                        type="button"
+                        className="btn-ghost px-2 py-1 text-xs"
+                        onClick={() => setQuick({ product: p, mode: "restock" })}
+                      >
+                        <ArrowUpCircle className="h-3.5 w-3.5 text-(--color-ok)" /> Add
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost px-2 py-1 text-xs"
+                        disabled={p.currentStock <= 0}
+                        title={p.currentStock <= 0 ? "Nothing in stock to use" : undefined}
+                        onClick={() => setQuick({ product: p, mode: "usage" })}
+                      >
+                        <ArrowDownCircle className="h-3.5 w-3.5 text-(--color-danger)" /> Use
+                      </button>
+                    </td>
+                  )}
                 </ClickableRow>
               );
             })}
           </tbody>
         </table>
       </div>
+
+      {/* Keyed so each open gets a fresh useActionState. Without this the
+          previous submission's "Saved" banner survives into the next sheet,
+          telling the caterer something was recorded when nothing has been. */}
+      <QuickMovementSheet
+        key={quick ? `${quick.product.id}-${quick.mode}` : "none"}
+        product={quick?.product ?? null}
+        mode={quick?.mode ?? "restock"}
+        units={units}
+        vendors={vendors}
+        events={events}
+        onClose={closeQuick}
+      />
     </div>
   );
 }

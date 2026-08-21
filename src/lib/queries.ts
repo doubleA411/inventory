@@ -34,6 +34,10 @@ export type ProductRow = {
   code: string | null;
   categoryName: string | null;
   unitSymbol: string;
+  /** Needed by the row's quick restock/use sheet to submit a movement. */
+  stockUnitId: string;
+  /** Units convertible to the stock unit share this group. */
+  unitGroupId: string;
   currentStock: number;
   reorderLevel: number;
   costPrice: number;
@@ -110,6 +114,8 @@ export async function listProducts(
         code: products.code,
         categoryName: categories.name,
         unitSymbol: units.symbol,
+        stockUnitId: units.id,
+        unitGroupId: units.groupId,
         currentStock: products.currentStock,
         reorderLevel: products.reorderLevel,
         costPrice: products.costPrice,

@@ -169,6 +169,41 @@
       "when": 1787131766894,
       "tag": "0023_add_apply_gst_to_quotations",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787172864837,
+      "tag": "0024_add_quotation_booking_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787203201314,
+      "tag": "0025_add_quotation_event_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1787251735640,
+      "tag": "0026_add_activity_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1787260552046,
+      "tag": "0027_vendor_payment_allocation",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1787292312938,
+      "tag": "0028_stock_usage_event_link",
+      "breakpoints": true
     }
   ]
 }

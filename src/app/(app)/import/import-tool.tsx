@@ -52,6 +52,7 @@ export function ImportTool({
   existingNames: string[];
 }) {
   const router = useRouter();
+  const [fileError, setFileError] = useState<string | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
@@ -92,9 +93,12 @@ export function ImportTool({
       raw: false,
     });
     if (json.length === 0) {
-      alert("That file has no data rows.");
+      setFileError(
+        "That file has no rows in it. Check you saved the sheet with your data on the first tab.",
+      );
       return;
     }
+    setFileError(null);
     const hdrs = Object.keys(json[0]);
     setHeaders(hdrs);
     setRows(json);
@@ -214,6 +218,12 @@ export function ImportTool({
             <FileDown className="h-4 w-4" /> Download template
           </button>
         </div>
+
+        {fileError && (
+          <p className="mb-3 rounded-lg bg-(--color-danger-soft) px-3 py-2 text-sm text-(--color-danger)">
+            {fileError}
+          </p>
+        )}
 
         {rows.length === 0 ? (
           <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-(--color-border) px-6 py-12 text-center hover:border-(--color-primary)">

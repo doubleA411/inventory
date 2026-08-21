@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { computeVendorBalance, vendorPaymentTotals } from "@/lib/purchase-queries";
 import {
   organizations,
   units,
@@ -20,6 +21,7 @@ import {
   removePurchaseBillItemCore,
   recordVendorPaymentCore,
   reverseVendorPaymentCore,
+  applyVendorCreditCore,
 } from "@/lib/purchases";
 
 describe("removePurchaseBillItemCore", () => {
@@ -328,7 +330,7 @@ describe("reverseVendorPaymentCore", () => {
     await recordVendorPaymentCore(org.id, userId, { vendorId, amount: 300, method: "cash" });
 
     const [row] = await paymentsFor(vendorId);
-    const result = await reverseVendorPaymentCore(org.id, row.id);
+    const result = await reverseVendorPaymentCore(org.id, userId, row.id);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.amount).toBe(300);
 
@@ -347,7 +349,7 @@ describe("reverseVendorPaymentCore", () => {
     expect(rows).toHaveLength(2); // one chunk per bill
 
     // Clicking either row takes the whole ₹600 back off.
-    const result = await reverseVendorPaymentCore(org.id, rows[0].id);
+    const result = await reverseVendorPaymentCore(org.id, userId, rows[0].id);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.amount).toBe(600);
@@ -362,20 +364,130 @@ describe("reverseVendorPaymentCore", () => {
     expect(await paymentsFor(vendorId)).toHaveLength(0);
   });
 
-  it("gives an opening balance back when the payment had eaten into it", async () => {
+  it("keeps the entered opening balance intact and derives what's left of it", async () => {
     const vendorId = await makeVendor(1000);
     await recordVendorPaymentCore(org.id, userId, { vendorId, amount: 400, method: "cash" });
 
+    // The figure the caterer typed is never rewritten — it used to be
+    // decremented here, which lost the original the moment any of it was paid.
     const [afterPayment] = await db.select().from(vendors).where(eq(vendors.id, vendorId));
-    expect(Number(afterPayment.openingBalance)).toBe(600);
+    expect(Number(afterPayment.openingBalance)).toBe(1000);
 
     const [row] = await paymentsFor(vendorId);
-    const result = await reverseVendorPaymentCore(org.id, row.id);
+    expect(row.appliedTo).toBe("opening_balance");
+
+    const totals = await vendorPaymentTotals(org.id, vendorId);
+    const balance = computeVendorBalance({
+      purchased: 0,
+      billsPaid: 0,
+      openingEntered: 1000,
+      openingPaid: totals.openingBalance,
+      credit: totals.credit,
+    });
+    expect(balance.openingEntered).toBe(1000);
+    expect(balance.openingRemaining).toBe(600);
+    expect(balance.paid).toBe(400); // the ₹400 is visible as paid, not swallowed
+    expect(balance.due).toBe(600);
+
+    const result = await reverseVendorPaymentCore(org.id, userId, row.id);
     expect(result.ok).toBe(true);
 
     const [restored] = await db.select().from(vendors).where(eq(vendors.id, vendorId));
     expect(Number(restored.openingBalance)).toBe(1000);
     expect(await paymentsFor(vendorId)).toHaveLength(0);
+    const after = await vendorPaymentTotals(org.id, vendorId);
+    expect(after.openingBalance).toBe(0);
+  });
+
+  it("counts credit the app itself released, instead of losing it from the balance", async () => {
+    const vendorId = await makeVendor();
+    const billId = await makeBill(vendorId, 1000);
+    await recordVendorPaymentCore(org.id, userId, { vendorId, amount: 1000, method: "cash" });
+
+    // Reducing the bill releases the excess as credit rather than discarding
+    // it. That credit used to be counted in neither "paid" nor "due", so the
+    // vendor page could report money owed while holding the caterer's cash.
+    const [item] = await db
+      .select()
+      .from(purchaseBillItems)
+      .where(eq(purchaseBillItems.purchaseBillId, billId));
+    const removed = await removePurchaseBillItemCore(org.id, billId, item.id, "unlink");
+    expect(removed.ok).toBe(true);
+
+    const totals = await vendorPaymentTotals(org.id, vendorId);
+    expect(totals.credit).toBe(1000);
+
+    const balance = computeVendorBalance({
+      purchased: 0,
+      billsPaid: 0,
+      openingEntered: 0,
+      openingPaid: totals.openingBalance,
+      credit: totals.credit,
+    });
+    expect(balance.paid).toBe(1000);
+    expect(balance.due).toBe(0);
+    expect(balance.credit).toBe(1000);
+  });
+
+  it("settles unpaid bills from credit without moving any money", async () => {
+    const vendorId = await makeVendor();
+    const paidBillId = await makeBill(vendorId, 1000);
+    await recordVendorPaymentCore(org.id, userId, { vendorId, amount: 1000, method: "cash" });
+
+    // Reducing the paid bill releases its ₹1,000 back as credit...
+    const [item] = await db
+      .select()
+      .from(purchaseBillItems)
+      .where(eq(purchaseBillItems.purchaseBillId, paidBillId));
+    expect((await removePurchaseBillItemCore(org.id, paidBillId, item.id, "unlink")).ok).toBe(true);
+
+    // ...and a second, unpaid bill is the contradiction: header says nothing
+    // owed, this bill says ₹400 due.
+    const owedBillId = await makeBill(vendorId, 400);
+    const before = await vendorPaymentTotals(org.id, vendorId);
+    expect(before.credit).toBe(1000);
+
+    const applied = await applyVendorCreditCore(org.id, userId, vendorId);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.applied).toBe(400);
+    expect(applied.bills).toBe(1);
+
+    const [settled] = await db
+      .select()
+      .from(purchaseBills)
+      .where(eq(purchaseBills.id, owedBillId));
+    expect(Number(settled.amountPaid)).toBe(400);
+
+    // Credit drops by exactly what was settled, and the total handed over is
+    // unchanged — this records where money went, it doesn't add any.
+    const after = await vendorPaymentTotals(org.id, vendorId);
+    expect(after.credit).toBe(600);
+    expect(after.bill + after.credit + after.openingBalance).toBe(
+      before.bill + before.credit + before.openingBalance,
+    );
+  });
+
+  it("refuses to use credit when there is none, or nothing to put it on", async () => {
+    const vendorId = await makeVendor();
+    const none = await applyVendorCreditCore(org.id, userId, vendorId);
+    expect(none.ok).toBe(false);
+    if (!none.ok) expect(none.error).toMatch(/no credit/i);
+  });
+
+  it("lets credit absorb what is owed before anything shows as due", async () => {
+    const balance = computeVendorBalance({
+      purchased: 2010,
+      billsPaid: 1600,
+      openingEntered: 0,
+      openingPaid: 0,
+      credit: 2000,
+    });
+    // The live SK Traders case: ₹410 outstanding against ₹2,000 of credit.
+    // Previously reported as "Due ₹410" while the vendor held their money.
+    expect(balance.due).toBe(0);
+    expect(balance.credit).toBe(1590);
+    expect(balance.paid).toBe(3600);
   });
 
   it("removes an unapplied advance without touching any bill", async () => {
@@ -387,7 +499,7 @@ describe("reverseVendorPaymentCore", () => {
     const advance = rows.find((r) => r.purchaseBillId == null)!;
     expect(Number(advance.amount)).toBe(150);
 
-    const result = await reverseVendorPaymentCore(org.id, advance.id);
+    const result = await reverseVendorPaymentCore(org.id, userId, advance.id);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.amount).toBe(250);
 
@@ -417,7 +529,7 @@ describe("reverseVendorPaymentCore", () => {
 
     const rows = await paymentsFor(vendorId);
     expect(rows).toHaveLength(2); // 50 still on the bill, 500 sitting as a credit
-    const result = await reverseVendorPaymentCore(org.id, rows[0].id);
+    const result = await reverseVendorPaymentCore(org.id, userId, rows[0].id);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.amount).toBe(550);
     expect(await paymentsFor(vendorId)).toHaveLength(0);
@@ -430,9 +542,9 @@ describe("reverseVendorPaymentCore", () => {
     await makeBill(vendorId, 100);
     await recordVendorPaymentCore(org.id, userId, { vendorId, amount: 100, method: "cash" });
     const [row] = await paymentsFor(vendorId);
-    expect((await reverseVendorPaymentCore(org.id, row.id)).ok).toBe(true);
+    expect((await reverseVendorPaymentCore(org.id, userId, row.id)).ok).toBe(true);
 
-    const again = await reverseVendorPaymentCore(org.id, row.id);
+    const again = await reverseVendorPaymentCore(org.id, userId, row.id);
     expect(again.ok).toBe(false);
     if (!again.ok) expect(again.error).toMatch(/no longer recorded/i);
   });

@@ -36,6 +36,7 @@ export function UnitsManager({
   );
   const [newGroup, setNewGroup] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Group units by their group name.
   const byGroup = groups.map((g) => ({
@@ -51,18 +52,26 @@ export function UnitsManager({
     if (res.ok) {
       setNewGroup("");
       router.refresh();
-    } else alert(res.error);
+    } else setError(res.error ?? "Could not add that group.");
   }
 
   async function removeUnit(id: string) {
+    setError(null);
     const res = await deleteUnitAction(id);
     if (res.ok) router.refresh();
-    else alert(res.error);
+    // In the page rather than a browser alert(): a unit usually fails to
+    // delete because products still use it, and that is worth reading twice.
+    else setError(res.error ?? "Could not delete that unit.");
   }
 
   return (
     <div className="grid gap-6 lg:grid-cols-3">
-      <div className="space-y-6 lg:col-span-2">
+      {error && (
+        <p className="rounded-lg bg-(--color-danger-soft) px-3 py-2 text-sm text-(--color-danger) lg:col-span-3">
+          {error}
+        </p>
+      )}
+      <div className="min-w-0 space-y-6 lg:col-span-2">
         {byGroup.map(({ group, units: us }) => (
           <div key={group.id} className="card">
             <div className="border-b border-(--color-border) px-4 py-3 text-sm font-semibold">

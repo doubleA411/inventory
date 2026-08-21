@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth";
-import { getQuotationFull } from "@/lib/billing-queries";
+import { getQuotationFull, invoiceMoney } from "@/lib/billing-queries";
 import { eventExpenseTotal } from "@/lib/expenses";
 import { Badge } from "@/components/ui";
 import { ProfitabilityCard } from "@/components/profitability-card";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { QUOTE_STATUS_META } from "@/lib/labels";
-import { ArrowLeft, Download, Pencil, Printer, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, Copy, Download, Pencil, Printer, UtensilsCrossed } from "lucide-react";
 import { QuoteActions } from "./quote-actions";
+import { BookingCard } from "./booking-card";
 
 export default async function QuotationViewPage({
   params,
@@ -30,9 +31,15 @@ export default async function QuotationViewPage({
   // committed to this price — a draft/sent estimate hasn't been agreed to
   // yet, and a rejected/expired one never will be billed, so "margin"
   // against either is a number that was never going to be earned.
-  const isCommitted = quotation.status === "accepted" || quotation.status === "converted";
+  const isConverted = quotation.status === "converted";
+  const isCommitted = quotation.status === "accepted" || isConverted;
   const expenseSummary = isCommitted
     ? await eventExpenseTotal(organization.id, id)
+    : null;
+  // Read the invoice's live paid amount rather than the quotation's stored
+  // advance: reversing that payment on the invoice has to be visible here too.
+  const invoice = quotation.convertedInvoiceId
+    ? await invoiceMoney(organization.id, quotation.convertedInvoiceId)
     : null;
 
   return (
@@ -59,6 +66,7 @@ export default async function QuotationViewPage({
               "Walk-in"
             )}{" "}
             · {fmtDate(quotation.issueDate)}
+            {quotation.eventDate ? ` · event on ${fmtDate(quotation.eventDate)}` : ""}
             {quotation.validUntil ? ` · valid until ${fmtDate(quotation.validUntil)}` : ""}
           </div>
         </div>
@@ -82,15 +90,36 @@ export default async function QuotationViewPage({
               </a>
             </>
           ) : (
-            <button className="btn-primary" disabled title="Needs owner approval first">
-              <Download className="h-4 w-4" /> Download PDF
-            </button>
+            // Says the reason in the page instead of hiding it in a hover
+            // tooltip that a phone never shows.
+            <span className="inline-flex items-center gap-2 rounded-lg bg-(--color-bg) px-3 py-2 text-sm text-(--color-muted)">
+              <Download className="h-4 w-4" /> PDF after the owner approves
+            </span>
           )}
-          <Link href={`/quotations/${id}/edit`} className="btn-outline">
-            <Pencil className="h-4 w-4" /> Edit
+          {/* A converted quotation is frozen — its invoice is already with the
+              customer (see saveQuotationCore). Duplicate is the way to quote a
+              changed price, so it is offered in Edit's place rather than
+              letting someone walk into a refusal. */}
+          {!isConverted && (
+            <Link href={`/quotations/${id}/edit`} className="btn-outline">
+              <Pencil className="h-4 w-4" /> Edit
+            </Link>
+          )}
+          <Link
+            href={`/quotations/new?cloneFrom=${id}`}
+            className="btn-outline"
+            title="Start a new quotation pre-filled with this one's details"
+          >
+            <Copy className="h-4 w-4" /> Duplicate
           </Link>
         </div>
       </div>
+      {isConverted && (
+        <p className="mb-4 rounded-lg bg-(--color-bg) px-3 py-2 text-sm text-(--color-muted)">
+          This quotation has been turned into an invoice, so it can&rsquo;t be changed. Use{" "}
+          <strong>Duplicate</strong> to start a new quotation from it.
+        </p>
+      )}
 
       <div className="mb-6">
         <QuoteActions
@@ -102,87 +131,105 @@ export default async function QuotationViewPage({
         />
       </div>
 
-      <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
-                <th className="px-4 py-2 font-medium">Item</th>
-                <th className="px-4 py-2 text-right font-medium">Qty</th>
-                <th className="px-4 py-2 text-right font-medium">Rate</th>
-                {gstEnabled && <th className="px-4 py-2 text-right font-medium">Tax%</th>}
-                <th className="px-4 py-2 text-right font-medium">Amount</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-(--color-border)">
-              {items.map((i) => (
-                <tr key={i.id}>
-                  <td className="px-4 py-2">
-                    {i.description}
-                    {i.hsnSac && (
-                      <span className="ml-2 text-xs text-(--color-muted)">{i.hsnSac}</span>
-                    )}
-                    {!!i.menuItems?.length && (
-                      <div className="mt-1.5 rounded-md bg-(--color-bg) p-2">
-                        {i.eventDate && (
-                          <div className="mb-1 text-xs font-medium text-(--color-muted)">
-                            {fmtDate(i.eventDate)}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
+          <div className="card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
+                    <th className="px-4 py-2 font-medium">Item</th>
+                    <th className="px-4 py-2 text-right font-medium">Qty</th>
+                    <th className="px-4 py-2 text-right font-medium">Rate</th>
+                    {gstEnabled && <th className="px-4 py-2 text-right font-medium">Tax%</th>}
+                    <th className="px-4 py-2 text-right font-medium">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-(--color-border)">
+                  {items.map((i) => (
+                    <tr key={i.id}>
+                      <td className="px-4 py-2">
+                        {i.description}
+                        {i.hsnSac && (
+                          <span className="ml-2 text-xs text-(--color-muted)">{i.hsnSac}</span>
+                        )}
+                        {!!i.menuItems?.length && (
+                          <div className="mt-1.5 rounded-md bg-(--color-bg) p-2">
+                            {i.eventDate && (
+                              <div className="mb-1 text-xs font-medium text-(--color-muted)">
+                                {fmtDate(i.eventDate)}
+                              </div>
+                            )}
+                            <ol className="list-decimal space-y-0.5 pl-4 text-xs text-(--color-muted)">
+                              {i.menuItems.map((m, mi) => (
+                                <li key={mi}>{m}</li>
+                              ))}
+                            </ol>
                           </div>
                         )}
-                        <ol className="list-decimal space-y-0.5 pl-4 text-xs text-(--color-muted)">
-                          {i.menuItems.map((m, mi) => (
-                            <li key={mi}>{m}</li>
-                          ))}
-                        </ol>
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">
-                    {Number(i.quantity)} {i.unit ?? ""}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">{fmtMoney(i.rate, cur)}</td>
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums">
+                        {Number(i.quantity)} {i.unit ?? ""}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums">{fmtMoney(i.rate, cur)}</td>
+                      {gstEnabled && (
+                        <td className="px-4 py-2 text-right tabular-nums">{Number(i.taxRate)}%</td>
+                      )}
+                      <td className="px-4 py-2 text-right tabular-nums">{fmtMoney(i.amount, cur)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end border-t border-(--color-border) p-4">
+              <table className="text-sm">
+                <tbody>
+                  <tr>
+                    <td className="pr-8 text-(--color-muted)">Subtotal</td>
+                    <td className="text-right tabular-nums">{fmtMoney(quotation.subtotal, cur)}</td>
+                  </tr>
                   {gstEnabled && (
-                    <td className="px-4 py-2 text-right tabular-nums">{Number(i.taxRate)}%</td>
+                    <tr>
+                      <td className="pr-8 text-(--color-muted)">Tax</td>
+                      <td className="text-right tabular-nums">{fmtMoney(quotation.taxTotal, cur)}</td>
+                    </tr>
                   )}
-                  <td className="px-4 py-2 text-right tabular-nums">{fmtMoney(i.amount, cur)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  <tr className="border-t border-(--color-border)">
+                    <td className="pr-8 pt-1 font-semibold">Total</td>
+                    <td className="pt-1 text-right text-base font-semibold tabular-nums">
+                      {fmtMoney(quotation.total, cur)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {expenseSummary && (
+            <ProfitabilityCard
+              revenue={Number(quotation.total)}
+              cost={expenseSummary.total}
+              expenseCount={expenseSummary.count}
+              cur={cur}
+              expensesHref={`/expenses?quotationId=${id}`}
+            />
+          )}
         </div>
-        <div className="flex justify-end border-t border-(--color-border) p-4">
-          <table className="text-sm">
-            <tbody>
-              <tr>
-                <td className="pr-8 text-(--color-muted)">Subtotal</td>
-                <td className="text-right tabular-nums">{fmtMoney(quotation.subtotal, cur)}</td>
-              </tr>
-              {gstEnabled && (
-                <tr>
-                  <td className="pr-8 text-(--color-muted)">Tax</td>
-                  <td className="text-right tabular-nums">{fmtMoney(quotation.taxTotal, cur)}</td>
-                </tr>
-              )}
-              <tr className="border-t border-(--color-border)">
-                <td className="pr-8 pt-1 font-semibold">Total</td>
-                <td className="pt-1 text-right text-base font-semibold tabular-nums">
-                  {fmtMoney(quotation.total, cur)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+
+        <div className="space-y-6">
+          <BookingCard
+            id={id}
+            currency={cur}
+            total={invoice?.total ?? quotation.total}
+            invoicePaid={invoice?.amountPaid ?? null}
+            advanceAmount={quotation.advanceAmount}
+            advanceRecordedAt={quotation.advanceRecordedAt}
+            takenAt={quotation.takenAt}
+            converted={quotation.status === "converted"}
+            convertedInvoiceId={quotation.convertedInvoiceId}
+          />
         </div>
       </div>
-
-      {expenseSummary && (
-        <ProfitabilityCard
-          revenue={Number(quotation.total)}
-          cost={expenseSummary.total}
-          expenseCount={expenseSummary.count}
-          cur={cur}
-          expensesHref={`/expenses?quotationId=${id}`}
-        />
-      )}
     </div>
   );
 }

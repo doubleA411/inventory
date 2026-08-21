@@ -48,6 +48,7 @@ export type DocEditorInitial = {
   issueDate?: string;
   secondDate?: string | null; // validUntil (quote) or dueDate (invoice)
   venue?: string | null;
+  eventDate?: string | null; // quote only — the function date
   notes?: string | null;
   terms?: string | null;
   applyGst?: boolean;
@@ -84,6 +85,19 @@ const newRow = (over: Partial<ItemRow> = {}): ItemRow => ({
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+/**
+ * Postgres numerics come back at full scale — a quantity of 200 reads as
+ * "200.000" and a rate of 450 as "450.00" — which makes a reopened form look
+ * broken and invites needless retyping. Shows the number the way it was
+ * entered, without touching genuine decimals.
+ */
+const trimNumber = (v: number | string): string => {
+  const s = String(v ?? "");
+  if (!s.includes(".")) return s;
+  const trimmed = s.replace(/0+$/, "").replace(/\.$/, "");
+  return trimmed === "" || trimmed === "-" ? "0" : trimmed;
+};
+
 export function DocEditor({
   kind,
   customers,
@@ -94,6 +108,7 @@ export function DocEditor({
   defaultTerms,
   currency,
   initial,
+  wasApproved = false,
   save,
 }: {
   kind: "quote" | "invoice";
@@ -105,6 +120,8 @@ export function DocEditor({
   defaultTerms: string | null;
   currency: string;
   initial?: DocEditorInitial;
+  /** Editing something the owner already signed off — saving un-approves it. */
+  wasApproved?: boolean;
   save: SaveFn;
 }) {
   const router = useRouter();
@@ -115,6 +132,7 @@ export function DocEditor({
   const [issueDate, setIssueDate] = useState(initial?.issueDate ?? today());
   const [secondDate, setSecondDate] = useState(initial?.secondDate ?? "");
   const [venue, setVenue] = useState(initial?.venue ?? "");
+  const [eventDate, setEventDate] = useState(initial?.eventDate ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [terms, setTerms] = useState(initial?.terms ?? defaultTerms ?? "");
   const [rows, setRows] = useState<ItemRow[]>(
@@ -123,10 +141,10 @@ export function DocEditor({
           newRow({
             description: i.description,
             hsnSac: i.hsnSac ?? "",
-            quantity: String(i.quantity),
+            quantity: trimNumber(i.quantity),
             unit: i.unit ?? "",
-            rate: String(i.rate),
-            taxRate: String(i.taxRate),
+            rate: trimNumber(i.rate),
+            taxRate: trimNumber(i.taxRate),
             menuItems: i.menuItems ?? [],
             eventDate: i.eventDate ?? "",
           }),
@@ -319,9 +337,7 @@ export function DocEditor({
   function onSave() {
     setError(null);
     if (!hasValidItems) {
-      setError(
-        "Every line item needs a description, quantity, unit, and rate — check the highlighted rows.",
-      );
+      setError(describeItemProblem(rows));
       return;
     }
     const payload =
@@ -353,6 +369,7 @@ export function DocEditor({
             issueDate,
             validUntil: secondDate || null,
             venue: venue || null,
+            eventDate: eventDate || null,
             notes,
             terms,
             applyGst: gstEnabled ? applyGst : undefined,
@@ -472,7 +489,11 @@ export function DocEditor({
             </div>
           </div>
           <div>
-            <label className="label">Date</label>
+            {/* Named for what it is. A bare "Date" sitting next to a concrete
+                "Event date" gives no clue which one the function is on. */}
+            <label className="label">
+              {kind === "invoice" ? "Bill date" : "Quotation date"}
+            </label>
             <input
               type="date"
               className="input"
@@ -482,7 +503,7 @@ export function DocEditor({
           </div>
           <div>
             <label className="label">
-              {kind === "invoice" ? "Due date" : "Valid until"}
+              {kind === "invoice" ? "Payment due by" : "Quote valid till"}
             </label>
             <input
               type="date"
@@ -491,7 +512,7 @@ export function DocEditor({
               onChange={(e) => setSecondDate(e.target.value)}
             />
           </div>
-          <div className="sm:col-span-3">
+          <div className={kind === "quote" ? "sm:col-span-2" : "sm:col-span-3"}>
             <label className="label">Venue</label>
             <input
               className="input"
@@ -500,6 +521,17 @@ export function DocEditor({
               onChange={(e) => setVenue(e.target.value)}
             />
           </div>
+          {kind === "quote" && (
+            <div>
+              <label className="label">Event date</label>
+              <input
+                type="date"
+                className="input"
+                value={eventDate}
+                onChange={(e) => setEventDate(e.target.value)}
+              />
+            </div>
+          )}
         </div>
 
         <Sheet
@@ -840,6 +872,17 @@ export function DocEditor({
         </div>
       </div>
 
+      {/* saveQuotationCore / saveInvoiceCore clear approvedAt on every edit so
+          the owner re-checks the numbers. That is deliberate, but it used to
+          happen silently — the green Approved chip just vanished. Said here,
+          before the change is committed, rather than discovered after. */}
+      {wasApproved && (
+        <p className="rounded-lg bg-(--color-warn-soft) px-3 py-2 text-sm">
+          The owner has already approved this. Saving changes will send it back for approval,
+          and printing or converting stays locked until then.
+        </p>
+      )}
+
       {error && (
         <p className="rounded-lg bg-(--color-danger-soft) px-3 py-2 text-sm text-(--color-danger)">
           {error}
@@ -847,16 +890,11 @@ export function DocEditor({
       )}
 
       <div className="flex items-center gap-2">
-        <button
-          className="btn-primary"
-          onClick={onSave}
-          disabled={pending || !hasValidItems}
-          title={
-            hasValidItems
-              ? undefined
-              : "Every line item needs a description, quantity, unit, and rate"
-          }
-        >
+        {/* Deliberately not disabled while the form is incomplete. A greyed
+            button explains nothing on a touch screen, where there is no hover
+            to reveal a title — so it stays clickable and answers on click,
+            naming the row and the missing field. */}
+        <button className="btn-primary" onClick={onSave} disabled={pending}>
           {pending ? "Saving…" : initial?.id ? "Save changes" : `Create ${kind === "invoice" ? "invoice" : "quotation"}`}
         </button>
         <Link href={base} className="btn-ghost">
@@ -865,6 +903,27 @@ export function DocEditor({
       </div>
     </div>
   );
+}
+
+/**
+ * Says exactly what is stopping the save, in the order a person fills the
+ * form in. "Something is wrong somewhere" is the failure mode this exists to
+ * avoid — each branch names the row number and the one field to go fix.
+ */
+function describeItemProblem(rows: ItemRow[]): string {
+  const filled = rows.filter((r) => r.description.trim());
+  if (filled.length === 0) {
+    return "Add at least one line — type what you're charging for in the Description box.";
+  }
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r.description.trim()) continue;
+    const where = `Line ${i + 1} ("${r.description.trim()}")`;
+    if (!(Number(r.quantity) > 0)) return `${where} needs a quantity greater than 0.`;
+    if (!r.unit.trim()) return `${where} needs a unit — for example plate, kg or nos.`;
+    if (!(Number(r.rate) > 0)) return `${where} needs a rate greater than 0.`;
+  }
+  return "Every line needs a description, quantity, unit and rate.";
 }
 
 function reorderItems<T>(items: T[], from: number, to: number): T[] {

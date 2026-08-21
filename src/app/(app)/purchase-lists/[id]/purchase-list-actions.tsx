@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Send, Copy, Trash2 } from "lucide-react";
+import { ConfirmButton } from "@/components/confirm-button";
 import { markPurchaseListSent, duplicatePurchaseList, deletePurchaseList } from "../actions";
 
 export function PurchaseListActions({
@@ -40,20 +41,19 @@ export function PurchaseListActions({
       >
         <Copy className="h-4 w-4" /> Duplicate
       </button>
-      <button
-        className="btn-ghost"
+      <ConfirmButton
+        icon={<Trash2 className="h-4 w-4" />}
+        label="Delete"
+        question="Delete this purchase list?"
+        detail="It disappears for good."
+        confirmLabel="Delete list"
+        busyLabel="Deleting…"
         disabled={pending}
-        onClick={() => {
-          if (confirm("Delete this purchase list permanently?"))
-            start(async () => {
-              await deletePurchaseList(id, vendorId);
-              router.push(vendorId ? `/vendors/${vendorId}` : "/purchase-lists");
-            });
+        onConfirm={async () => {
+          await deletePurchaseList(id, vendorId);
+          router.push(vendorId ? `/vendors/${vendorId}` : "/purchase-lists");
         }}
-        title="Delete"
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
+      />
     </div>
   );
 }

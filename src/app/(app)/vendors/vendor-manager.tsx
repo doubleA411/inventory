@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Pencil, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
+import { ConfirmButton } from "@/components/confirm-button";
 import { saveVendor, deleteVendor, quickCreateProduct } from "./actions";
 import { fmtMoney } from "@/lib/utils";
 import { Sheet } from "@/components/sheet";
@@ -17,6 +18,15 @@ type VendorRow = {
   openingBalance: string;
   purchased: string;
   paid: string;
+  /** Computed server-side by computeVendorBalance so every screen agrees. */
+  balance: {
+    purchased: number;
+    paid: number;
+    credit: number;
+    due: number;
+    openingEntered: number;
+    openingRemaining: number;
+  };
 };
 
 type ProductOption = { id: string; name: string };
@@ -47,6 +57,10 @@ export function VendorManager({
   const [productIds, setProductIds] = useState<Set<string>>(new Set());
 
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  // How much of the vendor being edited has already been paid off, so the
+  // opening-balance field can say what it is rather than looking stale.
+  const [editingOpeningPaid, setEditingOpeningPaid] = useState(0);
+  const [editingOpeningRemaining, setEditingOpeningRemaining] = useState(0);
   const [qa, setQa] = useState({ name: "", unitId: "" });
   const [qaBusy, setQaBusy] = useState(false);
   const [qaError, setQaError] = useState<string | null>(null);
@@ -99,6 +113,8 @@ export function VendorManager({
   }
 
   function openCreate() {
+    setEditingOpeningPaid(0);
+    setEditingOpeningRemaining(0);
     setEditingId(null);
     setF({ ...empty });
     setProductIds(new Set());
@@ -116,6 +132,8 @@ export function VendorManager({
       location: v.location ?? "",
       openingBalance: v.openingBalance,
     });
+    setEditingOpeningPaid(v.balance.openingEntered - v.balance.openingRemaining);
+    setEditingOpeningRemaining(v.balance.openingRemaining);
     setProductIds(new Set());
     setProductQuery("");
     setShowQuickAdd(false);
@@ -140,14 +158,6 @@ export function VendorManager({
         setOpen(false);
         router.refresh();
       } else setError(res.error ?? "Could not save");
-    });
-  }
-
-  function remove(id: string) {
-    if (!confirm("Delete this vendor?")) return;
-    start(async () => {
-      await deleteVendor(id);
-      router.refresh();
     });
   }
 
@@ -178,7 +188,7 @@ export function VendorManager({
             </thead>
             <tbody className="divide-y divide-(--color-border)">
               {vendors.map((v) => {
-                const due = Number(v.purchased) - Number(v.paid) + Number(v.openingBalance);
+                const { due, credit } = v.balance;
                 return (
                   <tr key={v.id} className="hover:bg-(--color-bg)">
                     <td className="px-4 py-3 font-medium">
@@ -195,6 +205,11 @@ export function VendorManager({
                     <td className="px-4 py-3 text-right tabular-nums">
                       {due > 0 ? (
                         <span className="text-(--color-danger)">{fmtMoney(due, currency)}</span>
+                      ) : credit > 0 ? (
+                        // Money they're holding for you is not a due of zero.
+                        <span className="text-(--color-ok)">
+                          {fmtMoney(credit, currency)} in credit
+                        </span>
                       ) : (
                         "—"
                       )}
@@ -204,9 +219,19 @@ export function VendorManager({
                       <button className="btn-ghost" onClick={() => openEdit(v)} title="Edit">
                         <Pencil className="h-4 w-4" />
                       </button>
-                      <button className="btn-ghost" onClick={() => remove(v.id)} title="Delete">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <ConfirmButton
+                        compact
+                        icon={<Trash2 className="h-4 w-4" />}
+                        label=""
+                        triggerTitle="Delete vendor"
+                        question="Delete this vendor?"
+                        confirmLabel="Delete vendor"
+                        busyLabel="Deleting…"
+                        onConfirm={async () => {
+                          await deleteVendor(v.id);
+                          router.refresh();
+                        }}
+                      />
                     </td>
                   </tr>
                 );
@@ -262,6 +287,17 @@ export function VendorManager({
             <p className="mt-1 text-xs text-(--color-muted)">
               Amount already owed to this vendor before adding them here.
             </p>
+            {/* This box holds the figure originally entered, not what's left of
+                it. Without saying so, someone reading "₹1,300 still unpaid" on
+                the vendor page would helpfully "correct" this to 1300 and
+                double-count the part they had already paid. */}
+            {editingOpeningPaid > 0 && (
+              <p className="mt-1 text-xs text-(--color-warn)">
+                {fmtMoney(editingOpeningPaid, currency)} of this has already been paid, leaving{" "}
+                {fmtMoney(editingOpeningRemaining, currency)} outstanding. Change the number here
+                only if the original amount was wrong.
+              </p>
+            )}
           </div>
 
           <div className={editingId ? "hidden" : undefined}>
@@ -385,7 +421,7 @@ export function VendorManager({
               onClick={save}
               disabled={pending || !f.name.trim()}
             >
-              {pending ? "Saving…" : "Add vendor"}
+              {pending ? "Saving…" : editingId ? "Save changes" : "Add vendor"}
             </button>
             <button className="btn-ghost" onClick={() => setOpen(false)}>
               Cancel

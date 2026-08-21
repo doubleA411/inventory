@@ -41,12 +41,14 @@ export default async function EditQuotationPage({
         defaultTerms={o.defaultTerms}
         currency={o.currency}
         save={saveQuotation}
+        wasApproved={!!quotation.approvedAt}
         initial={{
           id: quotation.id,
           customerId: quotation.customerId,
           issueDate: quotation.issueDate,
           secondDate: quotation.validUntil,
           venue: quotation.venue,
+          eventDate: quotation.eventDate,
           notes: quotation.notes,
           terms: quotation.terms,
           applyGst: quotation.applyGst,

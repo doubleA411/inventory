@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   customers,
@@ -102,10 +102,18 @@ export async function listQuotations(
       total: quotations.total,
       approvedAt: quotations.approvedAt,
       customerName: customers.name,
+      // The function date and whether the date is actually held — the two
+      // things a caterer scans this list for. Same item-date fallback as
+      // listUpcomingEvents, for quotations that predate quotations.eventDate.
+      eventDate: sql<string | null>`coalesce(${quotations.eventDate}, min(${quotationItems.eventDate}))`,
+      advanceAmount: quotations.advanceAmount,
+      takenAt: quotations.takenAt,
     })
     .from(quotations)
     .leftJoin(customers, eq(quotations.customerId, customers.id))
+    .leftJoin(quotationItems, eq(quotationItems.quotationId, quotations.id))
     .where(and(...conds))
+    .groupBy(quotations.id, customers.name)
     .orderBy(desc(quotations.createdAt));
 
   if (!opts?.search) return rows;
@@ -143,6 +151,78 @@ export async function listQuotationsForPicker(orgId: string) {
     customerName: r.customerName,
     eventDate: r.earliestEventDate ?? r.issueDate,
   }));
+}
+
+/**
+ * Bookings with a function date still ahead of them — for the dashboard
+ * widget. Only quotations actually taken up (see [[markQuotationTakenCore]] /
+ * [[recordQuotationAdvanceCore]] in billing.ts) qualify: a draft or a merely
+ * "accepted" estimate hasn't turned into a real date commitment yet, so it
+ * would just be clutter here. Sorted by the soonest upcoming session date
+ * across each quotation's line items (a multi-day function's already-past
+ * days don't count, but its later days do).
+ */
+export async function listUpcomingEvents(orgId: string, limit = 8) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  // quotations.eventDate is the one always-there function date; fall back to
+  // the earliest per-line-item date for quotations from before that column
+  // existed, or that only ever set dates via the menu editor.
+  const nextEventDate = sql<string>`coalesce(${quotations.eventDate}, min(${quotationItems.eventDate}))`;
+  // Money actually collected. Once converted, the invoice's payment ledger is
+  // the truth — reversing that advance there has to stop this widget claiming
+  // it was paid — so the quotation's own advanceAmount is only consulted while
+  // no invoice exists yet.
+  const collected = sql<string | null>`case
+    when ${quotations.status} = 'converted' then max(${invoices.amountPaid})
+    else max(${quotations.advanceAmount})
+  end`;
+  const rows = await db
+    .select({
+      id: quotations.id,
+      number: quotations.number,
+      status: quotations.status,
+      venue: quotations.venue,
+      customerName: customers.name,
+      total: quotations.total,
+      collected,
+      takenAt: quotations.takenAt,
+      approvedAt: quotations.approvedAt,
+      convertedInvoiceId: quotations.convertedInvoiceId,
+      nextEventDate,
+    })
+    .from(quotations)
+    .leftJoin(customers, eq(quotations.customerId, customers.id))
+    .leftJoin(quotationItems, eq(quotationItems.quotationId, quotations.id))
+    .leftJoin(invoices, eq(invoices.id, quotations.convertedInvoiceId))
+    .where(
+      and(
+        eq(quotations.organizationId, orgId),
+        ne(quotations.status, "rejected"),
+        ne(quotations.status, "expired"),
+        or(sql`${quotations.takenAt} is not null`, gt(quotations.advanceAmount, "0")),
+      ),
+    )
+    .groupBy(quotations.id, customers.name)
+    .having(gte(nextEventDate, todayStr))
+    .orderBy(asc(nextEventDate))
+    .limit(limit);
+  return rows;
+}
+
+/**
+ * The live total and amountPaid on one invoice. Used by the quotation view so
+ * a booking that has been converted reports the money its invoice actually
+ * holds, rather than the advance figure frozen on the quotation at conversion
+ * time. Both numbers come from the invoice: it is the document the customer
+ * was actually billed from.
+ */
+export async function invoiceMoney(orgId: string, invoiceId: string) {
+  const [inv] = await db
+    .select({ amountPaid: invoices.amountPaid, total: invoices.total })
+    .from(invoices)
+    .where(and(eq(invoices.id, invoiceId), eq(invoices.organizationId, orgId)))
+    .limit(1);
+  return inv ?? null;
 }
 
 export async function getQuotationFull(orgId: string, id: string) {

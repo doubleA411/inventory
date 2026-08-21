@@ -1,0 +1,1 @@
+ALTER TABLE "quotations" ADD COLUMN "event_date" date;

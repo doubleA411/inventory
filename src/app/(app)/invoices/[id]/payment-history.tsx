@@ -12,6 +12,7 @@ export type PaymentRow = {
   method: string;
   reference: string | null;
   paidAt: string;
+  note: string | null;
 };
 
 /**
@@ -68,6 +69,13 @@ export function InvoicePaymentHistory({
                   {p.method.replace("_", " ")} · {fmtDate(p.paidAt)}
                   {p.reference ? ` · ${p.reference}` : ""}
                 </div>
+                {/* Where the money came from — without this, the advance
+                    carried over from a quotation is indistinguishable from a
+                    hand-entered cash payment, and it is the row most likely to
+                    be reversed by mistake. */}
+                {p.note && (
+                  <div className="mt-0.5 text-xs normal-case text-(--color-muted)">{p.note}</div>
+                )}
               </div>
               <button
                 type="button"

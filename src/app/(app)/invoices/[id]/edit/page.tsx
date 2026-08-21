@@ -41,6 +41,7 @@ export default async function EditInvoicePage({
         defaultTerms={o.defaultTerms}
         currency={o.currency}
         save={saveInvoice}
+        wasApproved={!!invoice.approvedAt}
         initial={{
           id: invoice.id,
           customerId: invoice.customerId,

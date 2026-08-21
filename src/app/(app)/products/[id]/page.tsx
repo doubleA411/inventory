@@ -7,7 +7,7 @@ import {
   productUsageTotals,
   EXPIRY_SOON_DAYS,
 } from "@/lib/queries";
-import { listInvoices } from "@/lib/billing-queries";
+import { listQuotationsForPicker } from "@/lib/billing-queries";
 import { listVendors } from "@/lib/purchase-queries";
 import { Badge } from "@/components/ui";
 import { fmtQty, fmtDate, fmtMoney } from "@/lib/utils";
@@ -27,9 +27,11 @@ export default async function ProductDetailPage({
   if (!detail) notFound();
 
   const { product, unit, category, batches, movements } = detail;
-  const [allUnits, invoiceList, usage, vendorList] = await Promise.all([
+  const [allUnits, eventList, usage, vendorList] = await Promise.all([
     listUnits(organization.id),
-    listInvoices(organization.id),
+    // The same event list the expense form uses, so ingredients and other
+    // costs are attributed to the job the same way.
+    listQuotationsForPicker(organization.id),
     productUsageTotals(id),
     listVendors(organization.id),
   ]);
@@ -37,9 +39,12 @@ export default async function ProductDetailPage({
   const convUnits = allUnits
     .filter((u) => u.groupId === unit.groupId)
     .map((u) => ({ id: u.id, name: u.name, symbol: u.symbol }));
-  const billOptions = invoiceList
-    .slice(0, 100)
-    .map((i) => ({ id: i.id, number: i.number, customerName: i.customerName }));
+  const eventOptions = eventList.slice(0, 100).map((e) => ({
+    id: e.id,
+    number: e.number,
+    customerName: e.customerName,
+    eventDate: e.eventDate ? fmtDate(e.eventDate) : null,
+  }));
   const cur = organization.currency;
 
   const stock = Number(product.currentStock);
@@ -88,7 +93,7 @@ export default async function ProductDetailPage({
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left: stock + batches + history */}
-        <div className="space-y-6 lg:col-span-2">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div className="card p-4">
               <div className="text-sm text-(--color-muted)">Current stock</div>
@@ -263,7 +268,7 @@ export default async function ProductDetailPage({
               productId={id}
               units={convUnits}
               defaultUnitId={product.stockUnitId}
-              invoices={billOptions}
+              events={eventOptions}
               vendors={vendorList.map((v) => ({ id: v.id, name: v.name }))}
               defaultVendorId={product.preferredVendorId}
               lastCostPrice={product.costPrice != null ? Number(product.costPrice) : null}

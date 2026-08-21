@@ -29,6 +29,12 @@ export type ApplyMovementInput = {
   direction?: "increase" | "decrease";
   /** Usage/waste: the bill/invoice this stock was consumed for (optional). */
   invoiceId?: string | null;
+  /**
+   * Usage/waste: the function these ingredients were cooked for (optional).
+   * Preferred over invoiceId for attribution — it can be set before the job is
+   * invoiced, which is the order caterers actually work in.
+   */
+  quotationId?: string | null;
 };
 
 export type ApplyMovementResult =
@@ -242,6 +248,7 @@ export async function applyMovement(
           unitCost: unitCost != null ? String(unitCost) : null,
           costAmount: String(costAmount),
           invoiceId: input.invoiceId ?? null,
+          quotationId: input.quotationId ?? null,
         })
         .returning();
 

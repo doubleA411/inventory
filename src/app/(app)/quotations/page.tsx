@@ -6,7 +6,7 @@ import { SearchBox } from "@/components/search-box";
 import { ClickableRow, stopRowClick } from "@/components/clickable-row";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { QUOTE_STATUS_META } from "@/lib/labels";
-import { Plus } from "lucide-react";
+import { CalendarCheck, Plus } from "lucide-react";
 
 export default async function QuotationsPage({
   searchParams,
@@ -65,8 +65,8 @@ export default async function QuotationsPage({
                 <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
                   <th className="px-4 py-3 font-medium">Number</th>
                   <th className="px-4 py-3 font-medium">Customer</th>
-                  <th className="px-4 py-3 font-medium">Date</th>
-                  <th className="px-4 py-3 font-medium">Valid until</th>
+                  <th className="px-4 py-3 font-medium">Quoted on</th>
+                  <th className="px-4 py-3 font-medium">Event date</th>
                   <th className="px-4 py-3 text-right font-medium">Total</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                 </tr>
@@ -94,7 +94,27 @@ export default async function QuotationsPage({
                       </td>
                       <td className="px-4 py-3 text-(--color-muted)">{r.customerName ?? "—"}</td>
                       <td className="px-4 py-3 text-(--color-muted)">{fmtDate(r.issueDate)}</td>
-                      <td className="px-4 py-3 text-(--color-muted)">{fmtDate(r.validUntil)}</td>
+                      {/* The function date, with whether the date is actually
+                          held — the two things this list is scanned for. */}
+                      <td className="px-4 py-3">
+                        {r.eventDate ? (
+                          <span className="font-medium">{fmtDate(r.eventDate)}</span>
+                        ) : (
+                          <span className="text-(--color-muted)">—</span>
+                        )}
+                        {/* Suppressed once converted: the money then lives on
+                            the invoice (see listUpcomingEvents), so repeating
+                            the quotation's frozen advance here would claim
+                            cash that may since have been reversed. The Status
+                            column already says "Converted". */}
+                        {r.status !== "converted" &&
+                          (r.takenAt || r.advanceAmount != null) && (
+                            <span className="ml-2 inline-flex items-center gap-1 text-xs text-(--color-ok)">
+                              <CalendarCheck className="h-3 w-3" />
+                              {r.advanceAmount != null ? "Advance" : "Held"}
+                            </span>
+                          )}
+                      </td>
                       <td className="px-4 py-3 text-right tabular-nums">{fmtMoney(r.total, cur)}</td>
                       <td className="px-4 py-3">
                         <Badge tone={meta.tone}>{meta.label}</Badge>

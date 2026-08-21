@@ -40,6 +40,7 @@ export default async function VendorsPage() {
           openingBalance: v.openingBalance,
           purchased: v.purchased,
           paid: v.paid,
+          balance: v.balance,
         }))}
         products={products.map((p) => ({ id: p.id, name: p.name }))}
         units={units.map((u) => ({

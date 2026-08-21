@@ -9,8 +9,12 @@ import {
   approveQuotationCore,
   revokeQuotationApprovalCore,
   convertToInvoiceCore,
+  recordQuotationAdvanceCore,
+  markQuotationTakenCore,
+  unmarkQuotationTakenCore,
   type QuotationInput,
   type SaveResult,
+  type AdvanceResult,
 } from "@/lib/billing";
 import { generateQuotationShareToken, revokeQuotationShareToken } from "@/lib/sharing";
 
@@ -34,10 +38,16 @@ export async function setQuotationStatus(
   revalidatePath(`/quotations/${id}`);
 }
 
-export async function deleteQuotation(id: string): Promise<void> {
+export async function deleteQuotation(
+  id: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const { organization } = await requireRole("admin");
-  await deleteQuotationCore(organization.id, id);
-  revalidatePath("/quotations");
+  const result = await deleteQuotationCore(organization.id, id);
+  if (result.ok) {
+    revalidatePath("/quotations");
+    revalidatePath("/dashboard");
+  }
+  return result;
 }
 
 /** Owner-only: approve a quotation (unlocks print + convert). */
@@ -84,4 +94,39 @@ export async function convertToInvoice(
   revalidatePath(`/quotations/${id}`);
   if (result.ok) revalidatePath(`/invoices/${result.invoiceId}`);
   return result;
+}
+
+/**
+ * Record (or clear) the advance collected for this booking. `allowOverAdvance`
+ * is the user answering "yes, really" to an amount above the quotation total.
+ */
+export async function recordQuotationAdvance(
+  id: string,
+  amount: number | null,
+  allowOverAdvance = false,
+): Promise<AdvanceResult> {
+  const { organization } = await requireRole("admin");
+  const result = await recordQuotationAdvanceCore(organization.id, id, amount, {
+    allowOverAdvance,
+  });
+  if (result.ok) {
+    revalidatePath(`/quotations/${id}`);
+    revalidatePath("/dashboard");
+  }
+  return result;
+}
+
+/** Explicitly confirm a booking that hasn't had an advance recorded. */
+export async function markQuotationTaken(id: string): Promise<void> {
+  const { organization, user } = await requireRole("admin");
+  await markQuotationTakenCore(organization.id, user.id, id);
+  revalidatePath(`/quotations/${id}`);
+  revalidatePath("/dashboard");
+}
+
+export async function unmarkQuotationTaken(id: string): Promise<void> {
+  const { organization } = await requireRole("admin");
+  await unmarkQuotationTakenCore(organization.id, id);
+  revalidatePath(`/quotations/${id}`);
+  revalidatePath("/dashboard");
 }

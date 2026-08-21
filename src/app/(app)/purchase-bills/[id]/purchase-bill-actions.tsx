@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Ban, Trash2 } from "lucide-react";
+import { ConfirmButton } from "@/components/confirm-button";
 import { cancelPurchaseBill, deletePurchaseBill } from "../actions";
 
 export function PurchaseBillActions({
@@ -15,36 +16,36 @@ export function PurchaseBillActions({
   vendorId: string | null;
 }) {
   const router = useRouter();
-  const [pending, start] = useTransition();
+  const [pending] = useTransition();
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       {status !== "cancelled" && (
-        <button
+        <ConfirmButton
           className="btn-outline"
+          icon={<Ban className="h-4 w-4" />}
+          label="Cancel"
+          question="Cancel this purchase bill?"
+          detail="Stock you already received stays in inventory."
+          confirmLabel="Cancel bill"
+          busyLabel="Cancelling…"
           disabled={pending}
-          onClick={() => {
-            if (confirm("Cancel this purchase bill? Stock already received stays as-is."))
-              start(async () => void (await cancelPurchaseBill(id, vendorId)));
-          }}
-        >
-          <Ban className="h-4 w-4" /> Cancel
-        </button>
+          onConfirm={async () => void (await cancelPurchaseBill(id, vendorId))}
+        />
       )}
-      <button
-        className="btn-ghost"
+      <ConfirmButton
+        icon={<Trash2 className="h-4 w-4" />}
+        label="Delete"
+        question="Delete this purchase bill?"
+        detail="It disappears for good. Stock you already received stays in inventory."
+        confirmLabel="Delete bill"
+        busyLabel="Deleting…"
         disabled={pending}
-        onClick={() => {
-          if (confirm("Delete this purchase bill permanently? Stock already received stays as-is."))
-            start(async () => {
-              await deletePurchaseBill(id, vendorId);
-              router.push(vendorId ? `/vendors/${vendorId}` : "/vendors");
-            });
+        onConfirm={async () => {
+          await deletePurchaseBill(id, vendorId);
+          router.push(vendorId ? `/vendors/${vendorId}` : "/vendors");
         }}
-        title="Delete"
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
+      />
     </div>
   );
 }

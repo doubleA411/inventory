@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UserPlus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui";
+import { ConfirmButton } from "@/components/confirm-button";
 import { fmtDate } from "@/lib/utils";
 import {
   inviteMemberAction,
@@ -37,11 +38,15 @@ export function TeamManager({
     if (state.ok) router.refresh();
   }, [state, router]);
 
+  const [removeError, setRemoveError] = useState<string | null>(null);
+
   async function remove(id: string) {
-    if (!confirm("Remove this team member?")) return;
+    setRemoveError(null);
     const res = await removeMemberAction(id);
     if (res.ok) router.refresh();
-    else alert(res.error);
+    // Was an alert() — a dialog the user has to dismiss before they can even
+    // re-read the row it was about.
+    else setRemoveError(res.error ?? "Could not remove that person.");
   }
 
   const roleTone = { owner: "primary", admin: "ok", staff: "default" } as const;
@@ -79,13 +84,16 @@ export function TeamManager({
                   </td>
                   <td className="px-4 py-3 text-right">
                     {m.role !== "owner" && m.userId !== currentUserId && (
-                      <button
-                        className="btn-ghost"
-                        onClick={() => remove(m.membershipId)}
-                        title="Remove"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <ConfirmButton
+                        compact
+                        icon={<Trash2 className="h-4 w-4" />}
+                        label=""
+                        triggerTitle="Remove from team"
+                        question="Remove this person?"
+                        confirmLabel="Remove person"
+                        busyLabel="Removing…"
+                        onConfirm={() => remove(m.membershipId)}
+                      />
                     )}
                   </td>
                 </tr>
@@ -93,6 +101,11 @@ export function TeamManager({
             </tbody>
           </table>
         </div>
+        {removeError && (
+          <p className="border-t border-(--color-border) px-4 py-3 text-sm text-(--color-danger)">
+            {removeError}
+          </p>
+        )}
       </div>
 
       <form action={formAction} className="card space-y-3 p-4">

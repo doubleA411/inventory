@@ -28,6 +28,7 @@ export function QuoteActions({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const converted = status === "converted";
 
   return (
@@ -71,10 +72,15 @@ export function QuoteActions({
         ) : (
           <button
             className="btn-primary"
-            disabled={pending || !approved}
-            title={!approved ? "Needs owner approval first" : undefined}
+            disabled={pending}
             onClick={() =>
               start(async () => {
+                // Stays clickable when unapproved and says why on click — a
+                // greyed button with a hover tooltip tells a phone user nothing.
+                if (!approved) {
+                  setError("The owner needs to approve this quotation before it can be invoiced.");
+                  return;
+                }
                 const res = await convertToInvoice(id);
                 if (res.ok) router.push(`/invoices/${res.invoiceId}`);
                 else setError(res.error);
@@ -102,22 +108,56 @@ export function QuoteActions({
             <X className="h-4 w-4" /> Rejected
           </button>
         )}
+        {/* Labelled, not a bare icon, and it asks in the page rather than in a
+            browser dialog — same pattern as reversing a payment. */}
         <button
           className="btn-ghost"
           disabled={pending}
           onClick={() => {
-            if (confirm("Delete this quotation?"))
-              start(async () => {
-                await deleteQuotation(id);
-                router.push("/quotations");
-              });
+            setError(null);
+            setConfirmDelete(true);
           }}
-          title="Delete"
         >
-          <Trash2 className="h-4 w-4" />
+          <Trash2 className="h-4 w-4" /> Delete
         </button>
         {error && <span className="text-sm text-(--color-danger)">{error}</span>}
       </div>
+
+      {confirmDelete && (
+        <div className="space-y-2 rounded-lg border border-(--color-border) bg-(--color-bg) p-3">
+          <div className="text-sm font-medium">Delete this quotation?</div>
+          <p className="text-xs text-(--color-muted)">
+            It disappears for good, along with its menu and booking details. Any expenses you
+            logged against this event stay, but stop being counted towards it.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              className="btn-outline text-(--color-danger)"
+              disabled={pending}
+              onClick={() =>
+                start(async () => {
+                  const res = await deleteQuotation(id);
+                  if (!res.ok) {
+                    setError(res.error);
+                    setConfirmDelete(false);
+                    return;
+                  }
+                  router.push("/quotations");
+                })
+              }
+            >
+              {pending ? "Deleting…" : "Delete quotation"}
+            </button>
+            <button
+              className="btn-ghost"
+              disabled={pending}
+              onClick={() => setConfirmDelete(false)}
+            >
+              Keep it
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

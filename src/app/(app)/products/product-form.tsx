@@ -42,6 +42,7 @@ export function ProductForm({
   const [addingCat, setAddingCat] = useState(false);
   const [newCat, setNewCat] = useState("");
   const [catBusy, setCatBusy] = useState(false);
+  const [catError, setCatError] = useState<string | null>(null);
   const [vendorId, setVendorId] = useState(defaults?.preferredVendorId ?? "");
 
   async function addCategory() {
@@ -54,7 +55,7 @@ export function ProductForm({
       setAddingCat(false);
       router.refresh();
     } else {
-      alert(res.error);
+      setCatError(res.error ?? "Could not add that category.");
     }
   }
 
@@ -164,6 +165,9 @@ export function ProductForm({
                 Add
               </button>
             </div>
+          )}
+          {catError && (
+            <p className="mt-2 text-sm text-(--color-danger)">{catError}</p>
           )}
         </div>
 

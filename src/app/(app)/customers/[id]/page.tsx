@@ -62,7 +62,7 @@ export default async function CustomerDetailPage({
       />
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
           <div className="card p-4">
             <div className="grid grid-cols-3 gap-2 text-center">
               <div>

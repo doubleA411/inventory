@@ -19,6 +19,8 @@ const empty = {
   costPrice: "",
   preferredVendorId: "",
   notes: "",
+  openingQty: "",
+  paidNow: "",
 };
 
 export function ProductCreateSheet({
@@ -39,6 +41,9 @@ export function ProductCreateSheet({
   const [addingCat, setAddingCat] = useState(false);
   const [newCat, setNewCat] = useState("");
   const [catBusy, setCatBusy] = useState(false);
+
+  const hasOpening = Number(f.openingQty) > 0;
+  const needsCost = hasOpening && !f.costPrice;
 
   const unitGroups = useMemo(() => {
     return units.reduce<Record<string, Unit[]>>((acc, u) => {
@@ -84,8 +89,19 @@ export function ProductCreateSheet({
         costPrice: f.costPrice ? Number(f.costPrice) : null,
         preferredVendorId: f.preferredVendorId || null,
         notes: f.notes || null,
+      }, {
+        quantity: f.openingQty ? Number(f.openingQty) : null,
+        paidNow: f.paidNow ? Number(f.paidNow) : null,
       });
       if (res.ok) {
+        // The product saved either way. If only the stock part failed, stay
+        // open and say so — closing would look like a clean success and send
+        // them back to create a duplicate.
+        if (res.stockError) {
+          setError(`Product saved, but the stock wasn't added: ${res.stockError}`);
+          router.refresh();
+          return;
+        }
         setOpen(false);
         router.refresh();
       } else {
@@ -215,6 +231,51 @@ export function ProductCreateSheet({
             </div>
           </div>
 
+          {/* Opening stock — the whole point of the change. Leaving it blank
+              behaves exactly as before: a product with no stock yet. */}
+          <div className="rounded-lg border border-(--color-border) p-3">
+            <div className="mb-2 text-sm font-medium">Do you have some already?</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">How much?</label>
+                <input
+                  className="input"
+                  type="number"
+                  step="any"
+                  min="0"
+                  placeholder="Leave blank if none"
+                  value={f.openingQty}
+                  onChange={(e) => setF({ ...f, openingQty: e.target.value })}
+                />
+              </div>
+              {hasOpening && f.preferredVendorId && (
+                <div>
+                  <label className="label">Paid now (optional)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder="0.00"
+                    value={f.paidNow}
+                    onChange={(e) => setF({ ...f, paidNow: e.target.value })}
+                  />
+                </div>
+              )}
+            </div>
+            {hasOpening && (
+              <p className="mt-2 text-xs text-(--color-muted)">
+                {needsCost
+                  ? "Add a cost price above so this stock can be valued."
+                  : f.preferredVendorId
+                    ? `A purchase bill will be raised for ${
+                        vendors.find((v) => v.id === f.preferredVendorId)?.name ?? "this vendor"
+                      }.`
+                    : "Added straight to stock. Pick a vendor below to also record it as a purchase."}
+              </p>
+            )}
+          </div>
+
           <div>
             <label className="label">Preferred vendor</label>
             <select
@@ -230,7 +291,9 @@ export function ProductCreateSheet({
               ))}
             </select>
             <p className="mt-1 text-xs text-(--color-muted)">
-              Just a default — pre-fills the vendor when you restock this product.
+              {hasOpening
+                ? "Who you bought this from. Also pre-fills when you restock later."
+                : "Just a default — pre-fills the vendor when you restock this product."}
             </p>
           </div>
 

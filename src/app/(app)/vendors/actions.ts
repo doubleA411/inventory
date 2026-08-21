@@ -10,6 +10,7 @@ import { TAMIL_NADU_CODE } from "@/lib/india-states";
 import {
   recordVendorPaymentCore,
   reverseVendorPaymentCore,
+  applyVendorCreditCore,
   type VendorPaymentInput,
 } from "@/lib/purchases";
 import { productSchema, createProduct } from "@/lib/products";
@@ -149,8 +150,26 @@ export async function reverseVendorPayment(
   paymentId: string,
   vendorId: string,
 ): Promise<{ ok: true; amount: number } | { ok: false; error: string }> {
-  const { organization } = await requireRole("admin");
-  const result = await reverseVendorPaymentCore(organization.id, paymentId);
+  const { organization, user } = await requireRole("admin");
+  const result = await reverseVendorPaymentCore(organization.id, user.id, paymentId);
+  if (result.ok) {
+    revalidatePath(`/vendors/${vendorId}`);
+    revalidatePath("/vendors");
+    revalidatePath("/purchase-bills");
+    revalidatePath("/dashboard");
+  }
+  return result;
+}
+
+/**
+ * Put a vendor's existing credit against their unpaid bills. Moves no money —
+ * it records which bills the money the caterer already handed over paid for.
+ */
+export async function applyVendorCredit(
+  vendorId: string,
+): Promise<{ ok: true; applied: number; bills: number } | { ok: false; error: string }> {
+  const { organization, user } = await requireRole("admin");
+  const result = await applyVendorCreditCore(organization.id, user.id, vendorId);
   if (result.ok) {
     revalidatePath(`/vendors/${vendorId}`);
     revalidatePath("/vendors");

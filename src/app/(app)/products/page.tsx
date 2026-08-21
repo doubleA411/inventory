@@ -2,6 +2,8 @@ import Link from "next/link";
 import { requireAuth, hasRole } from "@/lib/auth";
 import { listProducts, listCategories, listUnits } from "@/lib/queries";
 import { listVendors } from "@/lib/purchase-queries";
+import { listQuotationsForPicker } from "@/lib/billing-queries";
+import { fmtDate } from "@/lib/utils";
 import { PageHeader, EmptyState } from "@/components/ui";
 import { SearchBox } from "@/components/search-box";
 import { ProductsTable } from "./products-table";
@@ -15,11 +17,13 @@ export default async function ProductsPage({
   const { organization, role } = await requireAuth();
   const sp = await searchParams;
   const onlyLow = sp.filter === "low";
-  const [products, categories, units, vendors] = await Promise.all([
+  const [products, categories, units, vendors, events] = await Promise.all([
     listProducts(organization.id, { search: sp.search, onlyLow }),
     listCategories(organization.id),
     listUnits(organization.id),
     listVendors(organization.id),
+    // For the row-level "Use" sheet — same event list as everywhere else.
+    listQuotationsForPicker(organization.id),
   ]);
   const canEdit = hasRole(role, "admin");
 
@@ -105,6 +109,19 @@ export default async function ProductsPage({
           categories={categories}
           currency={organization.currency}
           canEdit={canEdit}
+          units={units.map((u) => ({
+            id: u.id,
+            name: u.name,
+            symbol: u.symbol,
+            groupId: u.groupId,
+          }))}
+          vendors={vendors.map((v) => ({ id: v.id, name: v.name }))}
+          events={events.slice(0, 100).map((e) => ({
+            id: e.id,
+            number: e.number,
+            customerName: e.customerName,
+            eventDate: e.eventDate ? fmtDate(e.eventDate) : null,
+          }))}
         />
       )}
     </div>

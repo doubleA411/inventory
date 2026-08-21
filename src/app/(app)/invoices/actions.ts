@@ -12,6 +12,7 @@ import {
   reverseInvoicePaymentCore,
   type InvoiceInput,
   type PaymentInput,
+  type PaymentResult,
   type SaveResult,
 } from "@/lib/billing";
 import { generateInvoiceShareToken, revokeInvoiceShareToken } from "@/lib/sharing";
@@ -56,10 +57,16 @@ export async function revokeInvoiceApproval(id: string): Promise<void> {
   revalidatePath(`/invoices/${id}`);
 }
 
-export async function deleteInvoice(id: string): Promise<void> {
+export async function deleteInvoice(
+  id: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const { organization } = await requireRole("admin");
-  await deleteInvoiceCore(organization.id, id);
-  revalidatePath("/invoices");
+  const result = await deleteInvoiceCore(organization.id, id);
+  if (result.ok) {
+    revalidatePath("/invoices");
+    revalidatePath("/dashboard");
+  }
+  return result;
 }
 
 /** Generate (or replace) this invoice's public share link. */
@@ -79,9 +86,10 @@ export async function revokeInvoiceShareLink(id: string): Promise<void> {
 
 export async function recordPayment(
   raw: PaymentInput,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  allowOverpayment = false,
+): Promise<PaymentResult> {
   const { organization, user } = await requireRole("admin");
-  const result = await recordPaymentCore(organization.id, user.id, raw);
+  const result = await recordPaymentCore(organization.id, user.id, raw, { allowOverpayment });
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${raw.invoiceId}`);
   return result;
@@ -92,8 +100,8 @@ export async function reverseInvoicePayment(
   paymentId: string,
   invoiceId: string,
 ): Promise<{ ok: true; amount: number } | { ok: false; error: string }> {
-  const { organization } = await requireRole("admin");
-  const result = await reverseInvoicePaymentCore(organization.id, paymentId);
+  const { organization, user } = await requireRole("admin");
+  const result = await reverseInvoicePaymentCore(organization.id, user.id, paymentId);
   if (result.ok) {
     revalidatePath("/invoices");
     revalidatePath(`/invoices/${invoiceId}`);
