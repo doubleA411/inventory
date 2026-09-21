@@ -12,6 +12,7 @@ import {
   memberships,
   invoices,
 } from "@/lib/db/schema";
+import { dateInTimeZone } from "@/lib/utils";
 
 export const EXPIRY_SOON_DAYS = 7;
 
@@ -290,6 +291,7 @@ export async function listAllMovements(
     to?: string;
     limit?: number;
   },
+  timezone = "Asia/Kolkata",
 ) {
   const conds = [eq(stockMovements.organizationId, orgId), isNull(products.deletedAt)];
   if (
@@ -303,12 +305,12 @@ export async function listAllMovements(
   }
   if (opts?.from) {
     conds.push(
-      sql`(${stockMovements.createdAt} AT TIME ZONE 'Asia/Kolkata')::date >= ${opts.from}`,
+      sql`(${stockMovements.createdAt} AT TIME ZONE ${timezone})::date >= ${opts.from}`,
     );
   }
   if (opts?.to) {
     conds.push(
-      sql`(${stockMovements.createdAt} AT TIME ZONE 'Asia/Kolkata')::date <= ${opts.to}`,
+      sql`(${stockMovements.createdAt} AT TIME ZONE ${timezone})::date <= ${opts.to}`,
     );
   }
   return db
@@ -338,11 +340,15 @@ export async function listAllMovements(
 }
 
 /** Usage/waste cost aggregated by day (most recent first). */
-export async function usageCostByDay(orgId: string, days = 14) {
-  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+export async function usageCostByDay(
+  orgId: string,
+  days = 14,
+  timezone = "Asia/Kolkata",
+) {
+  const since = dateInTimeZone(new Date(Date.now() - days * 86400000), timezone);
   const rows = await db
     .select({
-      day: sql<string>`(${stockMovements.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`,
+      day: sql<string>`(${stockMovements.createdAt} AT TIME ZONE ${timezone})::date`,
       cost: sql<string>`coalesce(sum(${stockMovements.costAmount}), 0)`,
       count: sql<number>`count(*)::int`,
     })
@@ -352,22 +358,26 @@ export async function usageCostByDay(orgId: string, days = 14) {
         eq(stockMovements.organizationId, orgId),
         sql`${stockMovements.type} in ('usage','waste')`,
         gte(
-          sql`(${stockMovements.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`,
+          sql`(${stockMovements.createdAt} AT TIME ZONE ${timezone})::date`,
           since,
         ),
       ),
     )
-    .groupBy(sql`(${stockMovements.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`)
-    .orderBy(desc(sql`(${stockMovements.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`));
+    // Ordinal grouping keeps the parameterised timezone expression identical
+    // to the selected first column. Repeating it would produce different
+    // PostgreSQL placeholders ($1/$2), which are not considered the same
+    // grouping expression even when their runtime values match.
+    .groupBy(sql`1`)
+    .orderBy(desc(sql`1`));
   return rows.map((r) => ({ day: r.day, cost: Number(r.cost), count: Number(r.count) }));
 }
 
 /** Usage-cost totals for today and the current month. */
-export async function usageCostSummary(orgId: string) {
+export async function usageCostSummary(orgId: string, timezone = "Asia/Kolkata") {
   const [row] = await db
     .select({
-      today: sql<string>`coalesce(sum(${stockMovements.costAmount}) filter (where (${stockMovements.createdAt} AT TIME ZONE 'Asia/Kolkata')::date = (now() AT TIME ZONE 'Asia/Kolkata')::date), 0)`,
-      month: sql<string>`coalesce(sum(${stockMovements.costAmount}) filter (where date_trunc('month', ${stockMovements.createdAt} AT TIME ZONE 'Asia/Kolkata') = date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata')), 0)`,
+      today: sql<string>`coalesce(sum(${stockMovements.costAmount}) filter (where (${stockMovements.createdAt} AT TIME ZONE ${timezone})::date = (now() AT TIME ZONE ${timezone})::date), 0)`,
+      month: sql<string>`coalesce(sum(${stockMovements.costAmount}) filter (where date_trunc('month', ${stockMovements.createdAt} AT TIME ZONE ${timezone}) = date_trunc('month', now() AT TIME ZONE ${timezone})), 0)`,
     })
     .from(stockMovements)
     .where(
@@ -400,11 +410,15 @@ export type DashboardStats = {
   stockValue: number;
 };
 
-export async function dashboardStats(orgId: string): Promise<DashboardStats> {
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const soonStr = new Date(Date.now() + EXPIRY_SOON_DAYS * 86400000)
-    .toISOString()
-    .slice(0, 10);
+export async function dashboardStats(
+  orgId: string,
+  timezone = "Asia/Kolkata",
+): Promise<DashboardStats> {
+  const todayStr = dateInTimeZone(new Date(), timezone);
+  const soonStr = dateInTimeZone(
+    new Date(Date.now() + EXPIRY_SOON_DAYS * 86400000),
+    timezone,
+  );
 
   const expBase = db
     .select({
@@ -463,6 +477,7 @@ export async function dashboardStats(orgId: string): Promise<DashboardStats> {
       .where(
         and(
           eq(stockBatches.organizationId, orgId),
+          isNull(products.deletedAt),
           gt(stockBatches.quantityRemaining, "0"),
           isNotNull(stockBatches.expiryDate),
           lt(stockBatches.expiryDate, todayStr),

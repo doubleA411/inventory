@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
-import { fmtMoney } from "@/lib/utils";
+import { fmtMoney, localDateString } from "@/lib/utils";
 import { createPurchaseBill } from "./actions";
 import { ProductPicker } from "./product-picker";
 
@@ -36,7 +36,7 @@ function newRow(): Row {
   };
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localDateString();
 
 export function PurchaseBillEditor({
   vendors,

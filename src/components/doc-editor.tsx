@@ -15,7 +15,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import { computeTotals } from "@/lib/tax";
-import { fmtMoney, cn } from "@/lib/utils";
+import { fmtMoney, cn, localDateString } from "@/lib/utils";
 import { saveCustomer } from "@/app/(app)/customers/actions";
 import { TAMIL_NADU_CODE } from "@/lib/india-states";
 import { Sheet } from "@/components/sheet";
@@ -83,7 +83,7 @@ const newRow = (over: Partial<ItemRow> = {}): ItemRow => ({
   ...over,
 });
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localDateString();
 
 /**
  * Postgres numerics come back at full scale — a quantity of 200 reads as

@@ -2,17 +2,9 @@ import { requireRole } from "@/lib/auth";
 import { getExpenseLedger, groupLedgerByDate, listExpenseCategories } from "@/lib/expenses";
 import { listQuotationsForPicker } from "@/lib/billing-queries";
 import { PageHeader } from "@/components/ui";
-import { fmtMoney } from "@/lib/utils";
+import { dateInTimeZone, fmtMoney } from "@/lib/utils";
 import { ExpenseFilters } from "./expense-filters";
 import { ExpensesBoard } from "./expenses-board";
-
-function firstOfMonth(): string {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-}
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export default async function ExpensesPage({
   searchParams,
@@ -27,8 +19,9 @@ export default async function ExpensesPage({
 }) {
   const { organization } = await requireRole("admin");
   const sp = await searchParams;
-  const from = sp.from || firstOfMonth();
-  const to = sp.to || today();
+  const today = dateInTimeZone(new Date(), organization.timezone);
+  const from = sp.from || `${today.slice(0, 8)}01`;
+  const to = sp.to || today;
   const cur = organization.currency;
 
   const [categories, quotations, rows] = await Promise.all([
@@ -40,7 +33,7 @@ export default async function ExpensesPage({
       category: sp.category,
       quotationId: sp.quotationId,
       search: sp.search,
-    }),
+    }, organization.timezone),
   ]);
 
   const days = groupLedgerByDate(rows);

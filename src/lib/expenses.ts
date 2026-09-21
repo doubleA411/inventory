@@ -154,6 +154,7 @@ export type LedgerFilters = {
 export async function getExpenseLedger(
   orgId: string,
   filters: LedgerFilters,
+  timezone = "Asia/Kolkata",
 ): Promise<LedgerRow[]> {
   const wantStock = !filters.category || filters.category === "stock";
   const wantExpenses = !filters.category || filters.category !== "stock";
@@ -182,12 +183,12 @@ export async function getExpenseLedger(
     ];
     if (filters.from) {
       conds.push(
-        gte(sql`(${stockMovements.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`, filters.from),
+        gte(sql`(${stockMovements.createdAt} AT TIME ZONE ${timezone})::date`, filters.from),
       );
     }
     if (filters.to) {
       conds.push(
-        lte(sql`(${stockMovements.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`, filters.to),
+        lte(sql`(${stockMovements.createdAt} AT TIME ZONE ${timezone})::date`, filters.to),
       );
     }
     if (filters.quotationId) {
@@ -204,7 +205,7 @@ export async function getExpenseLedger(
     const stockRows = await db
       .select({
         id: stockMovements.id,
-        date: sql<string>`(${stockMovements.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`,
+        date: sql<string>`(${stockMovements.createdAt} AT TIME ZONE ${timezone})::date`,
         productId: products.id,
         productName: products.name,
         quantity: stockMovements.quantity,

@@ -12,7 +12,7 @@ import {
   type Organization,
 } from "@/lib/db/schema";
 import { computeTotals, financialYear, formatDocNumber, round2 } from "@/lib/tax";
-import { fmtMoney } from "@/lib/utils";
+import { dateInTimeZone, fmtMoney } from "@/lib/utils";
 import { logActivity, actorName } from "@/lib/activity";
 
 // Menu dish names and an event/function date under a line item — printed as
@@ -761,7 +761,7 @@ export async function convertToInvoiceCore(
   const res = await saveInvoiceCore(org, userId, {
     customerId: q.customerId,
     quotationId: q.id,
-    issueDate: new Date().toISOString().slice(0, 10),
+    issueDate: dateInTimeZone(new Date(), org.timezone),
     venue: q.venue,
     notes: q.notes,
     terms: q.terms,
@@ -794,7 +794,9 @@ export async function convertToInvoiceCore(
       invoiceId: res.id,
       amount: Number(q.advanceAmount),
       method: "cash",
-      paidAt: q.advanceRecordedAt?.toISOString().slice(0, 10),
+      paidAt: q.advanceRecordedAt
+        ? dateInTimeZone(q.advanceRecordedAt, org.timezone)
+        : undefined,
       note: `Advance recorded on ${q.number}`,
     });
   }

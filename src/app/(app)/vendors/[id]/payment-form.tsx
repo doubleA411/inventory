@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { recordVendorPayment } from "../actions";
+import { localDateString } from "@/lib/utils";
 
 const METHODS = [
   { value: "cash", label: "Cash" },
@@ -25,7 +26,7 @@ export function VendorPaymentForm({ vendorId, due }: { vendorId: string; due: nu
   }
   const [method, setMethod] = useState<(typeof METHODS)[number]["value"]>("cash");
   const [reference, setReference] = useState("");
-  const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
+  const [paidAt, setPaidAt] = useState(localDateString());
 
   function submit() {
     setError(null);

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { Combobox } from "@/components/combobox";
 import { createPurchaseList, updatePurchaseList } from "./actions";
+import { localDateString } from "@/lib/utils";
 
 type VendorLite = { id: string; name: string };
 type ProductLite = { id: string; name: string; stockUnitId: string };
@@ -30,7 +31,7 @@ function newRow(seed?: Partial<Row>): Row {
   };
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localDateString();
 
 export type PurchaseListInitial = {
   id: string;

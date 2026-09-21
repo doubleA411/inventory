@@ -10,6 +10,7 @@ import {
   payments,
   users,
 } from "@/lib/db/schema";
+import { dateInTimeZone } from "@/lib/utils";
 
 export async function listCustomers(orgId: string) {
   return db
@@ -186,8 +187,12 @@ export async function listQuotationsForPicker(orgId: string) {
  * across each quotation's line items (a multi-day function's already-past
  * days don't count, but its later days do).
  */
-export async function listUpcomingEvents(orgId: string, limit = 8) {
-  const todayStr = new Date().toISOString().slice(0, 10);
+export async function listUpcomingEvents(
+  orgId: string,
+  limit = 8,
+  timezone = "Asia/Kolkata",
+) {
+  const todayStr = dateInTimeZone(new Date(), timezone);
   // quotations.eventDate is the one always-there function date; fall back to
   // the earliest per-line-item date for quotations from before that column
   // existed, or that only ever set dates via the menu editor.

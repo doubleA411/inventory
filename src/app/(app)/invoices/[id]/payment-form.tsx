@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { fmtMoney } from "@/lib/utils";
+import { fmtMoney, localDateString } from "@/lib/utils";
 import { recordPayment } from "../actions";
 
 const METHODS = [
@@ -38,7 +38,7 @@ export function PaymentForm({
   }
   const [method, setMethod] = useState<(typeof METHODS)[number]["value"]>("cash");
   const [reference, setReference] = useState("");
-  const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
+  const [paidAt, setPaidAt] = useState(localDateString());
   // Set when the server refuses an amount above the balance due. Paying more
   // than is owed is legitimate now and then (a customer rounding up), so this
   // asks instead of blocking — but it never happens silently.

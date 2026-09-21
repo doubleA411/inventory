@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DocumentView, type DocOrg, type DocCustomer, type DocData } from "@/components/document-view";
 import { saveDocAppearance } from "./actions";
+import { localDateString } from "@/lib/utils";
 
 // Same A4-to-preview scaling as the letterhead layout tool, so both tools
 // feel consistent — but here we scale the real DocumentView output itself
@@ -56,7 +57,7 @@ const SAMPLE_DOC: DocData = {
   kind: "quote",
   title: "QUOTATION",
   number: "QUO/26-27/0001",
-  issueDate: new Date().toISOString().slice(0, 10),
+  issueDate: localDateString(),
   secondDateLabel: "Valid until",
   secondDate: null,
   placeOfSupplyStateCode: "33",

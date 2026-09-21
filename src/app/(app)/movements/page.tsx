@@ -37,10 +37,10 @@ export default async function MovementsPage({
       categoryId: sp.category,
       from: sp.from,
       to: sp.to,
-    }),
+    }, organization.timezone),
     listCategories(organization.id),
-    usageCostSummary(organization.id),
-    usageCostByDay(organization.id, 14),
+    usageCostSummary(organization.id, organization.timezone),
+    usageCostByDay(organization.id, 14, organization.timezone),
   ]);
   const maxDay = Math.max(1, ...daily.map((d) => d.cost));
   const hasFilters = !!(sp.type || sp.category || sp.from || sp.to);

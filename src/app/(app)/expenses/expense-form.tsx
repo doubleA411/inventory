@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Plus } from "lucide-react";
-import { fmtDate } from "@/lib/utils";
+import { fmtDate, localDateString } from "@/lib/utils";
 import { saveExpenseAction, saveExpenseCategoryAction } from "./actions";
 
 type CategoryLite = { id: string; name: string };
@@ -25,7 +25,7 @@ export type ExpenseFormInitial = {
   notes?: string | null;
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localDateString();
 
 export function ExpenseForm({
   categories,

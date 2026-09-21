@@ -17,7 +17,7 @@ import {
 import { applyMovement } from "@/lib/stock";
 import { roundQty } from "@/lib/units";
 import { financialYear, formatDocNumber } from "@/lib/tax";
-import { fmtMoney } from "@/lib/utils";
+import { dateInTimeZone, fmtMoney } from "@/lib/utils";
 import { logActivity, actorName } from "@/lib/activity";
 
 function round2(n: number): number {
@@ -802,7 +802,7 @@ export async function createPurchaseBillForRestockCore(
   },
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const amount = round2(input.quantity * input.rate);
-  const billDate = new Date().toISOString().slice(0, 10);
+  const billDate = dateInTimeZone(new Date(), org.timezone);
   let billId: string;
   try {
     billId = await db.transaction(async (tx) => {
@@ -906,7 +906,7 @@ export async function createPurchaseBillForRestockCore(
         purchaseBillId: billId,
         amount: String(paidNow),
         method: "cash",
-        paidAt: new Date().toISOString().slice(0, 10),
+        paidAt: dateInTimeZone(new Date(), org.timezone),
         createdBy: userId,
       });
       await tx

@@ -4,13 +4,9 @@ import { dashboardStats, recentMovements, usageCostSummary } from "@/lib/queries
 import { expensesTotal } from "@/lib/expenses";
 import { listUpcomingEvents } from "@/lib/billing-queries";
 import { PageHeader, StatCard, Badge } from "@/components/ui";
-import { fmtQty, fmtMoney, fmtDate } from "@/lib/utils";
+import { dateInTimeZone, fmtQty, fmtMoney, fmtDate } from "@/lib/utils";
 import { MOVEMENT_META } from "@/lib/labels";
 import { AlertTriangle, CalendarClock, Clock, PackageX, ShieldAlert } from "lucide-react";
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export default async function DashboardPage({
   searchParams,
@@ -23,13 +19,13 @@ export default async function DashboardPage({
   // the redirect is silent and reads as the app losing their tap.
   const { error } = await searchParams;
   const orgId = organization.id;
-  const todayStr = today();
+  const todayStr = dateInTimeZone(new Date(), organization.timezone);
   const [stats, recent, usageCost, expensesToday, upcomingEvents] = await Promise.all([
-    dashboardStats(orgId),
+    dashboardStats(orgId, organization.timezone),
     recentMovements(orgId, 12),
-    usageCostSummary(orgId),
+    usageCostSummary(orgId, organization.timezone),
     expensesTotal(orgId, todayStr, todayStr),
-    listUpcomingEvents(orgId),
+    listUpcomingEvents(orgId, 8, organization.timezone),
   ]);
   const todaysExpense = usageCost.today + expensesToday;
 

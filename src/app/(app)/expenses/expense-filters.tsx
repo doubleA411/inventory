@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
-import { fmtDate } from "@/lib/utils";
+import { fmtDate, localDateString } from "@/lib/utils";
 
 type CategoryLite = { id: string; name: string };
 type QuotationLite = {
@@ -13,19 +13,17 @@ type QuotationLite = {
   eventDate: string;
 };
 
-const isoDate = (d: Date) => d.toISOString().slice(0, 10);
-
 function presetRange(preset: "today" | "week" | "month"): { from: string; to: string } {
   const now = new Date();
-  const to = isoDate(now);
+  const to = localDateString(now);
   if (preset === "today") return { from: to, to };
   if (preset === "week") {
     const start = new Date(now);
     start.setDate(now.getDate() - 6);
-    return { from: isoDate(start), to };
+    return { from: localDateString(start), to };
   }
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  return { from: isoDate(start), to };
+  return { from: localDateString(start), to };
 }
 
 export function ExpenseFilters({

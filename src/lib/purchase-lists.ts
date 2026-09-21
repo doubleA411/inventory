@@ -4,6 +4,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { purchaseLists, purchaseListItems, type Organization } from "@/lib/db/schema";
 import { financialYear, formatDocNumber } from "@/lib/tax";
+import { dateInTimeZone } from "@/lib/utils";
 
 const purchaseListItemSchema = z.object({
   productId: z.string().uuid().nullable().optional(),
@@ -168,7 +169,7 @@ export async function duplicatePurchaseListCore(
 
   return createPurchaseListCore(org, userId, {
     vendorId: source.vendorId,
-    listDate: new Date().toISOString().slice(0, 10),
+    listDate: dateInTimeZone(new Date(), org.timezone),
     notes: source.notes,
     items: items.map((i) => ({
       productId: i.productId,
