@@ -130,7 +130,7 @@ export const FAQ: FaqCategory[] = [
     items: [
       {
         q: "How do I add my staff?",
-        a: "Go to Team → “Invite a team member”. Set their name, email, a temporary password and a role. Share the password with them; they can sign in and change it.",
+        a: "Go to Team → “Invite a team member”. Set their name, email, a temporary password and a role. Share the password with them; after signing in they can open their account from the sidebar footer and change it.",
         tags: ["team", "invite", "staff", "user", "add"],
       },
       {

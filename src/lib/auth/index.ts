@@ -105,6 +105,37 @@ export async function logout(): Promise<void> {
   await destroySession();
 }
 
+export type ChangePasswordResult =
+  | { ok: true; passwordHash: string }
+  | { ok: false; error: string };
+
+/** Change a signed-in user's password after verifying their current password. */
+export async function changePasswordCore(
+  userId: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<ChangePasswordResult> {
+  if (newPassword.length < 8) {
+    return { ok: false, error: "New password must be at least 8 characters." };
+  }
+
+  const [user] = await db
+    .select({ passwordHash: users.passwordHash })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!user || !(await bcrypt.compare(currentPassword, user.passwordHash))) {
+    return { ok: false, error: "Current password is incorrect." };
+  }
+  if (await bcrypt.compare(newPassword, user.passwordHash)) {
+    return { ok: false, error: "Choose a new password you haven’t used for this account." };
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+  return { ok: true, passwordHash };
+}
+
 /**
  * Create a new user and attach them to the given org with a role.
  * Used by the "invite team member" flow (owner/admin only).

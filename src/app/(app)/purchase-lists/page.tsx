@@ -17,7 +17,7 @@ export default async function PurchaseListsPage() {
         title="Purchase list"
         subtitle="Ask a vendor to supply what you need, then send it to them as a PDF."
         action={
-          <Link href="/vendors" className="btn-primary">
+          <Link href="/purchase-lists/new" className="btn-primary">
             <Plus className="h-4 w-4" /> New purchase list
           </Link>
         }
@@ -28,15 +28,15 @@ export default async function PurchaseListsPage() {
           title="No purchase lists yet"
           description="Create one from a vendor's page to ask them to supply their preferred products."
           action={
-            <Link href="/vendors" className="btn-primary">
-              Go to vendors
+            <Link href="/purchase-lists/new" className="btn-primary">
+              New purchase list
             </Link>
           }
         />
       ) : (
         <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="record-table-wrap overflow-x-auto">
+            <table className="record-table w-full text-sm">
               <thead>
                 <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
                   <th className="px-4 py-3 font-medium">Number</th>
@@ -54,7 +54,7 @@ export default async function PurchaseListsPage() {
                       href={`/purchase-lists/${r.id}`}
                       className="hover:bg-(--color-bg)"
                     >
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" data-mobile-primary>
                         <Link
                           href={`/purchase-lists/${r.id}`}
                           onClick={stopRowClick}
@@ -63,7 +63,7 @@ export default async function PurchaseListsPage() {
                           {r.number}
                         </Link>
                       </td>
-                      <td className="px-4 py-3 text-(--color-muted)">
+                      <td className="px-4 py-3 text-(--color-muted)" data-mobile-secondary>
                         {r.vendorId ? (
                           <Link
                             href={`/vendors/${r.vendorId}`}
@@ -76,8 +76,10 @@ export default async function PurchaseListsPage() {
                           "—"
                         )}
                       </td>
-                      <td className="px-4 py-3 text-(--color-muted)">{fmtDate(r.listDate)}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-(--color-muted)" data-mobile-label="List date">
+                        {fmtDate(r.listDate)}
+                      </td>
+                      <td className="px-4 py-3" data-mobile-label="Status">
                         <Badge tone={meta.tone}>{meta.label}</Badge>
                       </td>
                     </ClickableRow>

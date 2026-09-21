@@ -21,6 +21,7 @@ import {
   Menu,
   X,
   LogOut,
+  KeyRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logoutAction } from "./actions";
@@ -206,14 +207,21 @@ function UserFooter({ userName, role }: { userName: string; role: Role }) {
     <div className="border-t border-(--color-border) p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium">{userName}</div>
+          <Link href="/account" className="truncate text-sm font-medium hover:text-(--color-primary)">
+            {userName}
+          </Link>
           <div className="text-xs capitalize text-(--color-muted)">{role}</div>
         </div>
-        <form action={logoutAction}>
-          <button className="btn-ghost" title="Sign out" aria-label="Sign out">
-            <LogOut className="h-4.5 w-4.5" />
-          </button>
-        </form>
+        <div className="flex items-center gap-1">
+          <Link className="btn-ghost" href="/account" title="Account" aria-label="Account settings">
+            <KeyRound className="h-4.5 w-4.5" />
+          </Link>
+          <form action={logoutAction}>
+            <button className="btn-ghost" title="Sign out" aria-label="Sign out">
+              <LogOut className="h-4.5 w-4.5" />
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

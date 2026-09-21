@@ -22,6 +22,7 @@
 - Keep financially meaningful records visible through cancellation when payments or linked documents exist; explain the safer next action inline.
 - Empty states should state why the list is empty and offer the next useful action when one exists.
 - Tables may remain dense on desktop, but mobile should expose records as stacked, labeled rows rather than requiring horizontal scanning.
+- Mobile record rows use a two-column metadata grid: the record identity spans both columns, supporting identity sits directly below it, and short labeled facts follow in pairs. Daily actions remain visible at the bottom.
 - Every icon-only control needs an accessible name and visible hover/focus treatment.
 
 ## Rejected patterns

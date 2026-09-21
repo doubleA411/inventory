@@ -176,8 +176,8 @@ export function ProductsTable({
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <div className="record-table-wrap overflow-x-auto">
+        <table className="record-table w-full text-sm">
           <thead>
             <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
               {canEdit && (
@@ -221,7 +221,7 @@ export function ProductsTable({
                   className={`hover:bg-(--color-bg) ${p.isActive ? "" : "opacity-60"}`}
                 >
                   {canEdit && (
-                    <td className="px-4 py-3" onClick={stopRowClick}>
+                    <td className="px-4 py-3" data-mobile-select onClick={stopRowClick}>
                       <input
                         type="checkbox"
                         checked={selected.has(p.id)}
@@ -230,7 +230,7 @@ export function ProductsTable({
                       />
                     </td>
                   )}
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" data-mobile-primary>
                     <Link
                       href={`/products/${p.id}`}
                       onClick={stopRowClick}
@@ -254,21 +254,24 @@ export function ProductsTable({
                       unitSymbol={p.unitSymbol}
                     />
                   </td>
-                  <td className="px-4 py-3 text-(--color-muted)">{p.categoryName ?? "—"}</td>
-                  <td className="px-4 py-3 text-right tabular-nums font-medium">
+                  <td className="px-4 py-3 text-(--color-muted)" data-mobile-secondary>
+                    {p.categoryName ?? "Uncategorised"}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums font-medium" data-mobile-label="In stock">
                     {fmtQty(p.currentStock)}{" "}
                     <span className="text-(--color-muted)">{p.unitSymbol}</span>
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-(--color-muted)">
+                  <td className="px-4 py-3 text-right tabular-nums text-(--color-muted)" data-mobile-label="Reorder at">
                     {fmtQty(p.reorderLevel)} {p.unitSymbol}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" data-mobile-label="Status">
                     <Badge tone={status.tone}>{status.label}</Badge>
                   </td>
                   {canEdit && (
                     // The two things done daily, without leaving the list.
                     <td
                       className="sticky right-0 bg-(--color-surface) px-4 py-3 text-right whitespace-nowrap"
+                      data-mobile-actions
                       onClick={stopRowClick}
                     >
                       <button

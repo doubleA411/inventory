@@ -59,8 +59,8 @@ export default async function QuotationsPage({
         />
       ) : (
         <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="record-table-wrap overflow-x-auto">
+            <table className="record-table w-full text-sm">
               <thead>
                 <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
                   <th className="px-4 py-3 font-medium">Number</th>
@@ -80,7 +80,7 @@ export default async function QuotationsPage({
                       href={`/quotations/${r.id}`}
                       className="hover:bg-(--color-bg)"
                     >
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" data-mobile-primary>
                         <Link
                           href={`/quotations/${r.id}`}
                           onClick={stopRowClick}
@@ -92,11 +92,15 @@ export default async function QuotationsPage({
                           <span className="ml-2 text-xs text-(--color-warn)">• Pending</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-(--color-muted)">{r.customerName ?? "—"}</td>
-                      <td className="px-4 py-3 text-(--color-muted)">{fmtDate(r.issueDate)}</td>
+                      <td className="px-4 py-3 text-(--color-muted)" data-mobile-secondary>
+                        {r.customerName ?? "No customer"}
+                      </td>
+                      <td className="px-4 py-3 text-(--color-muted)" data-mobile-label="Quoted">
+                        {fmtDate(r.issueDate)}
+                      </td>
                       {/* The function date, with whether the date is actually
                           held — the two things this list is scanned for. */}
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" data-mobile-label="Event">
                         {r.eventDate ? (
                           <span className="font-medium">{fmtDate(r.eventDate)}</span>
                         ) : (
@@ -115,8 +119,10 @@ export default async function QuotationsPage({
                             </span>
                           )}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums">{fmtMoney(r.total, cur)}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-right tabular-nums" data-mobile-label="Total">
+                        {fmtMoney(r.total, cur)}
+                      </td>
+                      <td className="px-4 py-3" data-mobile-label="Status">
                         <Badge tone={meta.tone}>{meta.label}</Badge>
                       </td>
                     </ClickableRow>

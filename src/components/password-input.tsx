@@ -38,12 +38,9 @@ export function PasswordInput({
       <button
         type="button"
         onClick={() => setVisible((v) => !v)}
-        // Keep it out of the form's tab order — it's a display toggle, not
-        // a field — so Tab still moves straight from password to submit.
-        tabIndex={-1}
         aria-label={visible ? "Hide password" : "Show password"}
         aria-pressed={visible}
-        className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-(--color-muted) hover:text-(--color-fg)"
+        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-(--color-muted) transition-colors hover:text-(--color-fg) focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-(--color-primary)"
       >
         {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
       </button>

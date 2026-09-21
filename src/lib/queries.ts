@@ -472,7 +472,10 @@ export async function dashboardStats(orgId: string): Promise<DashboardStats> {
   ]);
 
   const lowStock = allProducts.filter(
-    (p) => p.isActive && p.currentStock <= p.reorderLevel,
+    // Keep this distinct from the dedicated out-of-stock alert. Showing the
+    // same zero-stock item in both panels made the dashboard feel noisier
+    // without giving the operator another action to take.
+    (p) => p.isActive && p.currentStock > 0 && p.currentStock <= p.reorderLevel,
   );
   const outOfStock = allProducts.filter(
     (p) => p.isActive && p.currentStock <= 0,

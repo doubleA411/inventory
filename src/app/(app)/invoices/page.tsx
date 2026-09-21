@@ -71,8 +71,8 @@ export default async function InvoicesPage({
         />
       ) : (
         <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="record-table-wrap overflow-x-auto">
+            <table className="record-table w-full text-sm">
               <thead>
                 <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
                   <th className="px-4 py-3 font-medium">Number</th>
@@ -94,7 +94,7 @@ export default async function InvoicesPage({
                       href={`/invoices/${r.id}`}
                       className="hover:bg-(--color-bg)"
                     >
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" data-mobile-primary>
                         <Link
                           href={`/invoices/${r.id}`}
                           onClick={stopRowClick}
@@ -109,13 +109,19 @@ export default async function InvoicesPage({
                           <span className="ml-2 text-xs text-(--color-warn)">• Pending</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-(--color-muted)">{r.customerName ?? "—"}</td>
-                      <td className="px-4 py-3 text-(--color-muted)">{fmtDate(r.issueDate)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">{fmtMoney(r.total, cur)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">
+                      <td className="px-4 py-3 text-(--color-muted)" data-mobile-secondary>
+                        {r.customerName ?? "No customer"}
+                      </td>
+                      <td className="px-4 py-3 text-(--color-muted)" data-mobile-label="Issued">
+                        {fmtDate(r.issueDate)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums" data-mobile-label="Total">
+                        {fmtMoney(r.total, cur)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums" data-mobile-label="Due">
                         {due > 0 ? fmtMoney(due, cur) : "—"}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" data-mobile-label="Status">
                         <Badge tone={meta.tone}>{meta.label}</Badge>
                       </td>
                     </ClickableRow>
