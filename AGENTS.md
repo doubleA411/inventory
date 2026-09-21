@@ -38,4 +38,38 @@ Three things now enforce this, so you shouldn't have to remember it:
 - **`/api/health` reports drift.** It diffs every column and enum value in `schema.ts`
   against the live catalog and returns 503 listing what's missing. The daily cron already
   hits it, so drift from any source — including hand-edits in the Supabase console —
-  surfaces within a day instead of as a user-facing 500.
+surfaces within a day instead of as a user-facing 500.
+
+# Data retention: do not hard-delete business records
+
+Business records must always be recoverable. Do not issue SQL `DELETE` statements or
+implement destructive deletion for business data unless the user explicitly authorizes
+that exact irreversible exception. Model deletion as a soft delete (for example,
+`deletedAt` / `deletedBy`) and exclude soft-deleted rows from normal product queries.
+Provide a restore path that clears the deletion fields. Include the required Drizzle
+migration and apply it explicitly to production when a schema change is deployed.
+
+# Development launch configuration
+
+```json
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "inventory-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000, "autoPort": true }
+  ]
+}
+```
+
+# Command permissions
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(vercel --version)",
+      "Bash(vercel whoami *)",
+      "Bash(vercel link *)"
+    ]
+  }
+}
+```
