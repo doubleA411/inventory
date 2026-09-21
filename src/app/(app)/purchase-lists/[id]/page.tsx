@@ -6,7 +6,7 @@ import { normalizeIndianMobile, waLink } from "@/lib/sharing";
 import { Badge } from "@/components/ui";
 import { fmtDate } from "@/lib/utils";
 import { PURCHASE_LIST_STATUS_META } from "@/lib/labels";
-import { ArrowLeft, Printer, Download, MessageCircle, Pencil } from "lucide-react";
+import { ArrowLeft, Printer, Download, MessageCircle, Pencil, PackageCheck } from "lucide-react";
 import { PurchaseListActions } from "./purchase-list-actions";
 
 export default async function PurchaseListViewPage({
@@ -47,10 +47,19 @@ export default async function PurchaseListViewPage({
               <Pencil className="h-4 w-4" /> Edit
             </Link>
           )}
+          <Link
+            href={`/purchase-bills/new?purchaseListId=${id}`}
+            className={list.status === "sent" ? "btn-primary" : "btn-outline"}
+          >
+            <PackageCheck className="h-4 w-4" /> Record purchase
+          </Link>
           <Link href={`/print/purchase-list/${id}`} className="btn-outline">
             <Printer className="h-4 w-4" /> Print
           </Link>
-          <a href={`/api/documents/purchase-list/${id}`} className="btn-primary">
+          <a
+            href={`/api/documents/purchase-list/${id}`}
+            className={list.status === "draft" ? "btn-primary" : "btn-outline"}
+          >
             <Download className="h-4 w-4" /> Download PDF
           </a>
           {waPhone && (

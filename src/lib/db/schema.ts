@@ -863,9 +863,9 @@ export const purchaseBillPayments = pgTable(
 // Purchase lists: what to ask a vendor to supply, sent to them ahead of
 // buying anything. Deliberately separate from purchase_bills — a list is a
 // request, it never touches stock or vendor dues (no rate/amount at all);
-// a bill is a receipt of what was actually bought. No conversion between the
-// two in v1 — see purchase_bill_status_enum's own "no edit after creation"
-// note for why bills stay append-only regardless.
+// a bill is a receipt of what was actually bought. The UI can prefill a new
+// bill from a list, but the user must confirm quantities and enter rates before
+// saving; bills remain append-only once they create stock batches.
 // ---------------------------------------------------------------------------
 export const purchaseListStatusEnum = pgEnum("purchase_list_status", ["draft", "sent"]);
 

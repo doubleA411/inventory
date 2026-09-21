@@ -26,18 +26,20 @@ export function ProductPicker({
   products,
   units,
   value,
+  initialQuery,
   onPick,
   onCreated,
 }: {
   products: PickableProduct[];
   units: PickerUnit[];
   value: string;
+  initialQuery?: string;
   onPick: (productId: string) => void;
   /** A product that didn't exist a moment ago — the caller adds it to its list. */
   onCreated: (product: PickableProduct) => void;
 }) {
   const selected = products.find((p) => p.id === value);
-  const [query, setQuery] = useState(selected?.name ?? "");
+  const [query, setQuery] = useState(selected?.name ?? initialQuery ?? "");
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [unitId, setUnitId] = useState("");

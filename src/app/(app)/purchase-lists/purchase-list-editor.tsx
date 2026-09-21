@@ -251,6 +251,7 @@ export function PurchaseListEditor({
                       className="btn-ghost"
                       onClick={() => removeRow(r.key)}
                       title="Remove line"
+                      aria-label={`Remove ${r.description || "line"}`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>

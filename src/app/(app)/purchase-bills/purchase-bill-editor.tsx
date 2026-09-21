@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { fmtMoney, localDateString } from "@/lib/utils";
@@ -23,7 +24,7 @@ type Row = {
 };
 
 let keySeq = 0;
-function newRow(): Row {
+function newRow(seed?: Partial<Row>): Row {
   return {
     key: `r${keySeq++}`,
     kind: "product",
@@ -33,10 +34,24 @@ function newRow(): Row {
     unitId: "",
     rate: "",
     amount: "",
+    ...seed,
   };
 }
 
 const today = () => localDateString();
+
+export type PurchaseBillInitial = {
+  vendorId: string;
+  notes: string;
+  sourceListId: string;
+  sourceListNumber: string;
+  items: {
+    productId: string | null;
+    description: string;
+    quantity: number;
+    unit: string | null;
+  }[];
+};
 
 export function PurchaseBillEditor({
   vendors,
@@ -44,20 +59,21 @@ export function PurchaseBillEditor({
   units,
   currency,
   defaultVendorId,
+  initial,
 }: {
   vendors: VendorLite[];
   products: ProductLite[];
   units: UnitLite[];
   currency: string;
   defaultVendorId?: string;
+  initial?: PurchaseBillInitial;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [vendorId, setVendorId] = useState(defaultVendorId ?? "");
+  const [vendorId, setVendorId] = useState(initial?.vendorId ?? defaultVendorId ?? "");
   const [billDate, setBillDate] = useState(today());
-  const [notes, setNotes] = useState("");
-  const [rows, setRows] = useState<Row[]>([newRow()]);
+  const [notes, setNotes] = useState(initial?.notes ?? "");
 
   // Local copy so a product created inline is immediately pickable on the
   // other lines too, without a page refresh mid-bill.
@@ -65,6 +81,35 @@ export function PurchaseBillEditor({
   const productsById = useMemo(
     () => new Map(productList.map((p) => [p.id, p])),
     [productList],
+  );
+
+  function unitsForProduct(productId: string): UnitLite[] {
+    const p = productsById.get(productId);
+    if (!p) return units;
+    const stockUnit = units.find((u) => u.id === p.stockUnitId);
+    if (!stockUnit) return units;
+    return units.filter((u) => u.groupId === stockUnit.groupId);
+  }
+
+  function unitIdForSymbol(symbol: string | null, productId: string | null): string {
+    if (!symbol) return "";
+    const candidates = productId ? unitsForProduct(productId) : units;
+    return candidates.find((u) => u.symbol === symbol)?.id ?? "";
+  }
+
+  const [rows, setRows] = useState<Row[]>(() =>
+    initial?.items.length
+      ? initial.items.map((item) => {
+          const product = item.productId ? productsById.get(item.productId) : undefined;
+          return newRow({
+            productId: item.productId ?? "",
+            description: item.description,
+            quantity: String(item.quantity),
+            unitId: unitIdForSymbol(item.unit, item.productId),
+            rate: product?.costPrice != null ? String(product.costPrice) : "",
+          });
+        })
+      : [newRow()],
   );
 
   function updateRow(key: string, patch: Partial<Row>) {
@@ -86,14 +131,6 @@ export function PurchaseBillEditor({
   }
   function removeRow(key: string) {
     setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.key !== key) : rs));
-  }
-
-  function unitsForProduct(productId: string): UnitLite[] {
-    const p = productsById.get(productId);
-    if (!p) return units;
-    const stockUnit = units.find((u) => u.id === p.stockUnitId);
-    if (!stockUnit) return units;
-    return units.filter((u) => u.groupId === stockUnit.groupId);
   }
 
   function lineAmount(r: Row): number {
@@ -150,6 +187,18 @@ export function PurchaseBillEditor({
 
   return (
     <div className="space-y-6">
+      {initial && (
+        <div className="rounded-xl border border-(--color-primary)/25 bg-(--color-primary-soft) px-4 py-3 text-sm">
+          Prefilled from{" "}
+          <Link
+            href={`/purchase-lists/${initial.sourceListId}`}
+            className="font-medium text-(--color-primary) hover:underline"
+          >
+            {initial.sourceListNumber}
+          </Link>
+          . Check what actually arrived and enter the vendor&rsquo;s rates before saving.
+        </div>
+      )}
       <div className="card p-5">
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
@@ -211,6 +260,7 @@ export function PurchaseBillEditor({
                         products={productList}
                         units={units}
                         value={r.productId}
+                        initialQuery={r.description}
                         onPick={(id) => pickProduct(r.key, id)}
                         onCreated={(p) => setProductList((list) => [...list, p])}
                       />
@@ -281,6 +331,7 @@ export function PurchaseBillEditor({
                       className="btn-ghost"
                       onClick={() => removeRow(r.key)}
                       title="Remove line"
+                      aria-label={`Remove ${r.description || "line"}`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
