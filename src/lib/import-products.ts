@@ -165,6 +165,10 @@ export async function importProducts(
           quantity: opening,
           unitId: unit.id,
           userId,
+          // Passed explicitly rather than leaning on a fallback: a blank cost
+          // on a restock now means "price not known yet", and the CSV's cost
+          // column is a real price the importer already has in hand.
+          unitCost: cost,
           note: "Opening stock (import)",
           expiryDate: expiry && /^\d{4}-\d{2}-\d{2}$/.test(expiry) ? expiry : null,
         });

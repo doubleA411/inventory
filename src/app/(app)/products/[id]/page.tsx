@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { sql } from "drizzle-orm";
+import { db } from "@/lib/db";
 import { requireAuth, hasRole } from "@/lib/auth";
 import {
   getProductDetail,
@@ -13,6 +15,7 @@ import { Badge } from "@/components/ui";
 import { fmtQty, fmtDate, fmtMoney } from "@/lib/utils";
 import { MOVEMENT_META } from "@/lib/labels";
 import { MovementPanel } from "./movement-panel";
+import { BatchCost } from "./batch-cost";
 import { DeleteProductButton } from "./delete-button";
 import { ArrowLeft, Pencil } from "lucide-react";
 
@@ -56,9 +59,26 @@ export default async function ProductDetailPage({
         ? { tone: "warn" as const, label: "Low stock" }
         : { tone: "ok" as const, label: "In stock" };
   const canEdit = hasRole(role, "admin");
+  // A batch is partly used when less remains than the restock that created it
+  // brought in. Movements only carry a batchId for that restock, so this is the
+  // only batch-level link available.
+  const drawnFrom = new Set(
+    movements
+      .filter((m) => m.type === "restock" && m.batchId)
+      .filter((m) => {
+        const batch = batches.find((b) => b.id === m.batchId);
+        return batch && Number(batch.quantityRemaining) < Math.abs(Number(m.deltaInStockUnit));
+      })
+      .map((m) => m.batchId as string),
+  );
 
-  const soonMs = Date.now() + EXPIRY_SOON_DAYS * 86400000;
-  const todayMs = new Date().setHours(0, 0, 0, 0);
+  // Let Postgres determine the dates in the organisation's timezone rather
+  // than reading the wall clock during React's render.
+  const [clock] = await db.execute<{ today: string; soon: string }>(sql`
+    select
+      (now() at time zone ${organization.timezone})::date::text as today,
+      ((now() at time zone ${organization.timezone})::date + ${EXPIRY_SOON_DAYS})::text as soon
+  `);
 
   return (
     <div>
@@ -136,7 +156,7 @@ export default async function ProductDetailPage({
           {/* Batches */}
           <div className="card">
             <div className="border-b border-(--color-border) px-4 py-3 text-sm font-semibold">
-              Batches (FEFO order)
+              Stock in hand — oldest used first
             </div>
             {batches.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-(--color-muted)">
@@ -155,13 +175,13 @@ export default async function ProductDetailPage({
                   </thead>
                   <tbody className="divide-y divide-(--color-border)">
                     {batches.map((b) => {
-                      const exp = b.expiryDate ? new Date(b.expiryDate).getTime() : null;
+                      const exp = b.expiryDate ?? null;
                       const expTone =
                         exp == null
                           ? null
-                          : exp < todayMs
+                          : exp < clock.today
                             ? ("danger" as const)
-                            : exp <= soonMs
+                            : exp <= clock.soon
                               ? ("warn" as const)
                               : null;
                       return (
@@ -170,7 +190,18 @@ export default async function ProductDetailPage({
                             {fmtQty(b.quantityRemaining)} {unit.symbol}
                           </td>
                           <td className="px-4 py-2 tabular-nums text-(--color-muted)">
-                            {b.unitCost != null ? fmtMoney(b.unitCost, cur) : "—"}
+                            {canEdit ? (
+                              <BatchCost
+                                batchId={b.id}
+                                unitCost={b.unitCost}
+                                currency={cur}
+                                partlyUsed={drawnFrom.has(b.id)}
+                              />
+                            ) : b.unitCost != null ? (
+                              fmtMoney(b.unitCost, cur)
+                            ) : (
+                              "—"
+                            )}
                           </td>
                           <td className="px-4 py-2 text-(--color-muted)">
                             {fmtDate(b.receivedDate)}

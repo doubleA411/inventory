@@ -6,6 +6,29 @@ import { buildBackup, BACKUP_SHEETS } from "@/lib/backup";
 import { fmtDate } from "@/lib/utils";
 import { MOVEMENT_META } from "@/lib/labels";
 
+/**
+ * Neutralise spreadsheet formula injection.
+ *
+ * Exported cells carry names, notes and references typed by people in the org,
+ * and Excel/Sheets treat a leading =, +, -, @ (or a leading tab/CR) as the
+ * start of a formula rather than text — so a product called
+ * `=HYPERLINK("http://…"&A1)` becomes a live formula in whoever opens the file,
+ * including an accountant outside the business. Prefixing an apostrophe forces
+ * the cell to text; spreadsheets hide the apostrophe on display. Only strings
+ * are touched, so genuine negative numbers are unaffected.
+ */
+const FORMULA_START = /^[=+\-@\t\r]/;
+
+function safeCell(v: unknown): unknown {
+  return typeof v === "string" && FORMULA_START.test(v) ? `'${v}` : v;
+}
+
+function safeRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return rows.map((row) =>
+    Object.fromEntries(Object.entries(row).map(([k, v]) => [k, safeCell(v)])),
+  );
+}
+
 export async function GET(req: NextRequest) {
   const ctx = await getAuthContext();
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -28,7 +51,7 @@ export async function GET(req: NextRequest) {
       for (const sheet of BACKUP_SHEETS) {
         const data = backup[sheet.key] as Record<string, unknown>[];
         const worksheet = XLSX.utils.json_to_sheet(
-          data.length ? data : [{ [sheet.label]: "No data" }],
+          data.length ? safeRows(data) : [{ [sheet.label]: "No data" }],
         );
         XLSX.utils.book_append_sheet(workbook, worksheet, sheet.label.slice(0, 31));
       }
@@ -94,7 +117,7 @@ export async function GET(req: NextRequest) {
     filename = "products";
   }
 
-  const worksheet = XLSX.utils.json_to_sheet(rows);
+  const worksheet = XLSX.utils.json_to_sheet(safeRows(rows));
 
   if (format === "xlsx") {
     const workbook = XLSX.utils.book_new();

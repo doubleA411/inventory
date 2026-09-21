@@ -808,7 +808,9 @@ export function DocEditor({
         </div>
         <div className="card h-fit p-4">
           {gstEnabled && (
-            <label className="mb-3 flex items-start gap-2 border-b border-(--color-border) pb-3 text-sm">
+            <label
+              className="mb-3 flex items-start gap-2 border-b border-(--color-border) pb-3 text-sm"
+            >
               <input
                 type="checkbox"
                 className="mt-0.5"

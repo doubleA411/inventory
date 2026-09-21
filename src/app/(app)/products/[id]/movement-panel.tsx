@@ -52,14 +52,9 @@ export function MovementPanel({
     {},
   );
   const router = useRouter();
-  const [justSaved, setJustSaved] = useState(false);
-
   useEffect(() => {
     if (state.ok) {
-      setJustSaved(true);
       router.refresh();
-      const t = setTimeout(() => setJustSaved(false), 2500);
-      return () => clearTimeout(t);
     }
   }, [state, router]);
 
@@ -133,22 +128,29 @@ export function MovementPanel({
               <label className="label" htmlFor="expiryDate">
                 Expiry date (optional)
               </label>
-              <input id="expiryDate" name="expiryDate" type="date" className="input" />
+              <input
+                id="expiryDate"
+                name="expiryDate"
+                type="date"
+                className="input"
+              />
             </div>
             <div>
               <label className="label" htmlFor="unitCost">
-                Cost per unit *
+                Cost per unit
               </label>
+              {/* Not required: goods often arrive before the vendor's bill
+                  does, and blocking the entry means the kitchen is holding
+                  stock the app doesn't know about. */}
               <input
                 id="unitCost"
                 name="unitCost"
                 type="number"
                 step="any"
                 min="0"
-                required
                 defaultValue={lastCostPrice != null ? String(lastCostPrice) : ""}
                 className="input"
-                placeholder="0.00"
+                placeholder="Leave blank if not known yet"
               />
             </div>
           </div>
@@ -223,7 +225,12 @@ export function MovementPanel({
               Which function is this for? (optional)
             </label>
             {events.length > 0 ? (
-              <select id="quotationId" name="quotationId" className="input" defaultValue="">
+              <select
+                id="quotationId"
+                name="quotationId"
+                className="input"
+                defaultValue=""
+              >
                 <option value="">— General kitchen use —</option>
                 {events.map((e) => (
                   <option key={e.id} value={e.id}>
@@ -257,13 +264,17 @@ export function MovementPanel({
             {state.error}
           </p>
         )}
-        {justSaved && (
+        {state.ok && (
           <p className="rounded-lg bg-(--color-ok-soft) px-3 py-2 text-sm text-(--color-ok)">
             Saved. Stock updated.
           </p>
         )}
 
-        <button type="submit" className="btn-primary w-full" disabled={pending}>
+        <button
+          type="submit"
+          className="btn-primary w-full"
+          disabled={pending}
+        >
           {pending ? "Saving…" : "Record movement"}
         </button>
       </form>

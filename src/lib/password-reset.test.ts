@@ -111,13 +111,13 @@ describe("password reset", () => {
     if (!res.ok) expect(res.error).toMatch(/invalid/i);
   });
 
-  it("rejects a password shorter than 6 characters", async () => {
+  it("rejects a password shorter than 8 characters", async () => {
     const token = await requestAndCaptureToken(email);
     expect(token).toBeTruthy();
     if (!token) return;
     const res = await resetPassword(token, "abc");
     expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toMatch(/at least 6/i);
+    if (!res.ok) expect(res.error).toMatch(/at least 8/i);
   });
 
   it("rejects an expired token", async () => {

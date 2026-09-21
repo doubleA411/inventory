@@ -18,22 +18,31 @@ const EXT_BY_TYPE: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/jpg": "jpg",
   "image/webp": "webp",
-  "image/svg+xml": "svg",
   "application/pdf": "pdf",
 };
 
+// SVG is deliberately absent: these files land in a *public* bucket, and an
+// SVG is a script-bearing document, not just a picture. Nothing in the app
+// renders one dangerously today (logos go through <img>, and the bucket is a
+// separate origin), but a raster-only allowlist means that stays true no
+// matter where a logo gets embedded later. PNG/JPEG/WebP cover real logos.
 export const ALLOWED_IMAGE_TYPES = [
   "image/png",
   "image/jpeg",
   "image/jpg",
   "image/webp",
-  "image/svg+xml",
 ];
 export const ALLOWED_LETTERHEAD_TYPES = [...ALLOWED_IMAGE_TYPES, "application/pdf"];
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 
+/**
+ * Extension for the stored key. Derived from the (already allowlisted)
+ * content type rather than the uploader's filename — a filename extension is
+ * attacker-supplied and can carry path separators, which would scatter the
+ * object across unintended keys/directories.
+ */
 function extFor(file: File): string {
-  return EXT_BY_TYPE[file.type] ?? (file.name.split(".").pop() || "bin");
+  return EXT_BY_TYPE[file.type] ?? "bin";
 }
 
 /**

@@ -120,7 +120,7 @@ export function TeamManager({
         </div>
         <div>
           <label className="label" htmlFor="password">Temporary password</label>
-          <input id="password" name="password" type="text" className="input" required minLength={6} />
+          <input id="password" name="password" type="text" className="input" required minLength={8} />
           <p className="mt-1 text-xs text-(--color-muted)">
             Share this with them; they can change it later.
           </p>

@@ -1,7 +1,6 @@
 // Shared content for the onboarding tour and the help center.
 
 export type TourStep = {
-  // CSS selector of the element to spotlight (omit for a centered popover).
   selector?: string;
   title: string;
   description: string;
@@ -9,60 +8,14 @@ export type TourStep = {
 };
 
 export const TOUR_STEPS: TourStep[] = [
-  {
-    title: "Welcome to Stackwise 👋",
-    description:
-      "A quick 60-second tour of how to manage your inventory. You can replay this anytime from the “Take a tour” button.",
-  },
-  {
-    selector: '[data-tour="nav-dashboard"]',
-    title: "Dashboard",
-    description:
-      "Your at-a-glance view: total products, low-stock and out-of-stock counts, items expiring soon, and recent activity.",
-    side: "right",
-  },
-  {
-    selector: '[data-tour="nav-products"]',
-    title: "Products",
-    description:
-      "Your catalogue. Add items manually or import a list. Click any product to restock it, log usage, and see its history.",
-    side: "right",
-  },
-  {
-    selector: '[data-tour="nav-movements"]',
-    title: "Stock History",
-    description:
-      "A full audit trail of every restock, usage, waste and adjustment across all products. Filter by type and export it.",
-    side: "right",
-  },
-  {
-    selector: '[data-tour="nav-units"]',
-    title: "Units",
-    description:
-      "The plug-and-play part. Define your own units (kg, litre, dozen, bag…) and how they convert, so you can buy in one unit and use in another.",
-    side: "right",
-  },
-  {
-    selector: '[data-tour="nav-import"]',
-    title: "Import / Export",
-    description:
-      "Bulk-load your product list from CSV or Excel with a guided column mapper, or export your inventory and history.",
-    side: "right",
-  },
-  {
-    selector: '[data-tour="nav-team"]',
-    title: "Team",
-    description:
-      "Invite your staff. Admins manage products and settings; Staff can log stock and view. Everyone sees the same live inventory.",
-    side: "right",
-  },
-  {
-    selector: '[data-tour="nav-help"]',
-    title: "Need help?",
-    description:
-      "Answers to common questions live in the Help Center. That’s it — you’re ready to go! Start by adding a product.",
-    side: "right",
-  },
+  { title: "Welcome to Stackwise 👋", description: "A quick 60-second tour of how to manage your inventory. You can replay this anytime from the “Take a tour” button." },
+  { selector: '[data-tour="nav-dashboard"]', title: "Dashboard", description: "Your at-a-glance view: total products, low-stock and out-of-stock counts, items expiring soon, and recent activity.", side: "right" },
+  { selector: '[data-tour="nav-products"]', title: "Products", description: "Your catalogue. Add items manually or import a list. Click any product to restock it, log usage, and see its history.", side: "right" },
+  { selector: '[data-tour="nav-movements"]', title: "Stock History", description: "A full audit trail of every restock, usage, waste and adjustment across all products. Filter by type and export it.", side: "right" },
+  { selector: '[data-tour="nav-units"]', title: "Units", description: "The plug-and-play part. Define your own units (kg, litre, dozen, bag…) and how they convert, so you can buy in one unit and use in another.", side: "right" },
+  { selector: '[data-tour="nav-import"]', title: "Import / Export", description: "Bulk-load your product list from CSV or Excel with a guided column mapper, or export your inventory and history.", side: "right" },
+  { selector: '[data-tour="nav-team"]', title: "Team", description: "Invite your staff. Admins manage products and settings; Staff can log stock and view. Everyone sees the same live inventory.", side: "right" },
+  { selector: '[data-tour="nav-help"]', title: "Need help?", description: "Answers to common questions live in the Help Center. That’s it — you’re ready to go! Start by adding a product.", side: "right" },
 ];
 
 export type FaqItem = {

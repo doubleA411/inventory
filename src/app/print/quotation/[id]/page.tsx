@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { requireAuth } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { getQuotationFull } from "@/lib/billing-queries";
 import { DocumentView, orgToDocOrg } from "@/components/document-view";
 import { PrintBar } from "../../print-bar";
@@ -11,7 +11,7 @@ export default async function QuotationPrintPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ menu?: string }>;
 }) {
-  const { organization } = await requireAuth();
+  const { organization } = await requireRole("admin");
   const { id } = await params;
   const { menu } = await searchParams;
   const menuOnly = menu === "1";

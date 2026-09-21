@@ -121,7 +121,7 @@ export function QuickMovementSheet({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="label" htmlFor="qms-cost">
-                  Cost per unit *
+                  Cost per unit
                 </label>
                 <input
                   id="qms-cost"
@@ -129,10 +129,9 @@ export function QuickMovementSheet({
                   type="number"
                   step="any"
                   min="0"
-                  required
                   defaultValue={product.costPrice ? String(product.costPrice) : ""}
                   className="input"
-                  placeholder="0.00"
+                  placeholder="Blank if not known yet"
                 />
               </div>
               <div>

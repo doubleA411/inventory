@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import * as XLSX from "xlsx";
 import { UploadCloud, FileDown, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui";
@@ -357,9 +358,9 @@ export function ImportTool({
                     </ul>
                   </div>
                 )}
-                <a href="/products" className="btn-primary mt-3">
+                <Link href="/products" className="btn-primary mt-3">
                   View products
-                </a>
+                </Link>
               </div>
             ) : (
               <button

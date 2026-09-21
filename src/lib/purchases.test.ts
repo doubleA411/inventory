@@ -6,6 +6,7 @@ import {
   organizations,
   units,
   users,
+  memberships,
   products,
   vendors,
   stockBatches,
@@ -29,6 +30,8 @@ describe("removePurchaseBillItemCore", () => {
   let userId: string;
   let kgId: string;
   let vendorId: string;
+  const run = Date.now();
+  const createdUserIds: string[] = [];
   const createdVendorIds: string[] = [];
   const createdProductIds: string[] = [];
   const createdBillIds: string[] = [];
@@ -99,9 +102,17 @@ describe("removePurchaseBillItemCore", () => {
       .limit(1);
     if (!found) throw new Error('No "Sample Caterers" org — run `npm run db:seed` first.');
     org = found;
-    const [u] = await db.select().from(users).limit(1);
-    if (!u) throw new Error("No users — run `npm run db:seed` first.");
+    const [u] = await db
+      .insert(users)
+      .values({
+        email: `purchase-items-test-${run}@example.com`,
+        passwordHash: "x",
+        name: "Purchase Items Test User",
+      })
+      .returning();
     userId = u.id;
+    createdUserIds.push(u.id);
+    await db.insert(memberships).values({ userId, organizationId: org.id, role: "owner" });
     const [kg] = await db
       .select()
       .from(units)
@@ -123,6 +134,9 @@ describe("removePurchaseBillItemCore", () => {
       await db.delete(products).where(inArray(products.id, createdProductIds));
     }
     await db.delete(vendors).where(inArray(vendors.id, createdVendorIds));
+    if (createdUserIds.length) {
+      await db.delete(users).where(inArray(users.id, createdUserIds));
+    }
   });
 
   it("unlink drops the line but leaves the stock in inventory", async () => {
@@ -233,6 +247,8 @@ describe("reverseVendorPaymentCore", () => {
   let org: Organization;
   let userId: string;
   let kgId: string;
+  const run = Date.now();
+  const createdUserIds: string[] = [];
   const createdVendorIds: string[] = [];
   const createdProductIds: string[] = [];
   const createdBillIds: string[] = [];
@@ -297,8 +313,17 @@ describe("reverseVendorPaymentCore", () => {
       .limit(1);
     if (!found) throw new Error('No "Sample Caterers" org — run `npm run db:seed` first.');
     org = found;
-    const [u] = await db.select().from(users).limit(1);
+    const [u] = await db
+      .insert(users)
+      .values({
+        email: `vendor-payment-test-${run}@example.com`,
+        passwordHash: "x",
+        name: "Vendor Payment Test User",
+      })
+      .returning();
     userId = u.id;
+    createdUserIds.push(u.id);
+    await db.insert(memberships).values({ userId, organizationId: org.id, role: "owner" });
     const [kg] = await db
       .select()
       .from(units)
@@ -321,6 +346,9 @@ describe("reverseVendorPaymentCore", () => {
     }
     if (createdVendorIds.length) {
       await db.delete(vendors).where(inArray(vendors.id, createdVendorIds));
+    }
+    if (createdUserIds.length) {
+      await db.delete(users).where(inArray(users.id, createdUserIds));
     }
   });
 

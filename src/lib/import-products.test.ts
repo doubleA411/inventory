@@ -10,6 +10,9 @@ describe("importProducts (CSV/XLSX import)", () => {
   const createdProductIds: string[] = [];
   const createdCategoryIds: string[] = [];
   const run = Date.now();
+  // Keep the follow-up restock after the opening batch regardless of when the
+  // suite runs. A fixed past date changes the intended FIFO tie-breaker.
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   beforeAll(async () => {
     const [org] = await db.select().from(organizations).limit(1);
@@ -96,7 +99,7 @@ describe("importProducts (CSV/XLSX import)", () => {
       quantity: 10,
       unitId: row.stockUnitId,
       unitCost: 80,
-      receivedDate: "2026-07-26",
+      receivedDate: tomorrow,
     });
 
     // Use 25kg: 20 from the imported batch @50, then 5 from the restock @80.

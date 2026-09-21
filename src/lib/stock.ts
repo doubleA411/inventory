@@ -133,7 +133,13 @@ export async function applyMovement(
         delta = qtyInStock;
         const batchCost =
           input.type === "restock"
-            ? (input.unitCost ?? fallbackCost)
+            ? // Left null when the price isn't known yet, rather than quietly
+              // standing in the product's last cost. Goods regularly arrive
+              // before the vendor's bill, and an invented price that looks
+              // real is worse than an admitted gap: a null batch is drawn at
+              // the product's last cost as an estimate (below) and shows as
+              // "price not set" until someone fills it in.
+              (input.unitCost ?? null)
             : fallbackCost; // adjustment increase: no real purchase price
         movementUnitCost = batchCost;
         const [batch] = await tx

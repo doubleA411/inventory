@@ -14,7 +14,7 @@ const signupSchema = z.object({
   companyName: z.string().trim().min(1, "Company name is required"),
   industry: z.string().trim().min(1, "Choose an industry"),
   email: z.string().email("Enter a valid email"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
 export type SignupState = { error?: string };
@@ -70,6 +70,10 @@ export async function signupAction(
 
   await seedOrgDefaults(db, org.id, d.industry);
 
-  await createSession({ userId: user.id, email: user.email });
+  await createSession({
+    userId: user.id,
+    email: user.email,
+    passwordHash: user.passwordHash,
+  });
   redirect("/dashboard");
 }

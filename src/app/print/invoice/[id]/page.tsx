@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { requireAuth } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { getInvoiceFull } from "@/lib/billing-queries";
 import { DocumentView, orgToDocOrg } from "@/components/document-view";
 import { PrintBar } from "../../print-bar";
@@ -9,7 +9,7 @@ export default async function InvoicePrintPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { organization } = await requireAuth();
+  const { organization } = await requireRole("admin");
   const { id } = await params;
   const data = await getInvoiceFull(organization.id, id);
   if (!data) notFound();

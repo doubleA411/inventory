@@ -6,7 +6,12 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, memberships, organizations } from "@/lib/db/schema";
 import type { Role, User, Organization, Membership } from "@/lib/db/schema";
-import { createSession, destroySession, readSession } from "./session";
+import {
+  createSession,
+  destroySession,
+  readSession,
+  sessionMatchesUser,
+} from "./session";
 
 export type AuthContext = {
   user: User;
@@ -30,6 +35,11 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
     .where(eq(users.id, session.userId))
     .limit(1);
   if (!user) return null;
+  // The token is bound to the password hash it was issued under, so a password
+  // reset (or an admin-set password) invalidates every session that predates
+  // it — including one an attacker is holding, which is the whole point of
+  // resetting. See sessionAuthHash in ./session.
+  if (!sessionMatchesUser(session, user.passwordHash)) return null;
 
   const [row] = await db
     .select({ membership: memberships, organization: organizations })
@@ -83,7 +93,11 @@ export async function login(
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) return { ok: false, error: "Invalid email or password." };
 
-  await createSession({ userId: user.id, email: user.email });
+  await createSession({
+    userId: user.id,
+    email: user.email,
+    passwordHash: user.passwordHash,
+  });
   return { ok: true };
 }
 

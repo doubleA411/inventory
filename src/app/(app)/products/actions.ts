@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { products, categories } from "@/lib/db/schema";
+import { products, categories, stockBatches, stockMovements } from "@/lib/db/schema";
 import { requireAuth, requireRole } from "@/lib/auth";
 import { applyMovement } from "@/lib/stock";
 import { productSchema, createProduct, updateProduct } from "@/lib/products";
@@ -78,8 +78,10 @@ async function stockOnSave(
 ): Promise<{ error?: string } | void> {
   const { quantity, unitCost, vendorId } = input;
   if (!quantity || quantity <= 0) return;
-  if (unitCost == null) {
-    return { error: "Enter a cost per unit so this stock can be valued." };
+  // A blank cost is allowed everywhere else stock goes in, so it is allowed
+  // here too — except against a vendor, where the bill needs a line amount.
+  if (vendorId && unitCost == null) {
+    return { error: "Enter a cost price to record this as a purchase from a vendor." };
   }
 
   if (vendorId) {
@@ -288,14 +290,18 @@ const movementSchema = z
     paidNow: z.coerce.number().min(0).optional().nullable(),
   })
   .superRefine((d, ctx) => {
-    // A restock without a cost silently corrupts the batch's valuation (and
-    // any usage/waste later drawn from it) — see src/lib/stock.ts's blended
-    // cost math — so this can't be left to a "last cost" placeholder.
-    if (d.type === "restock" && (d.unitCost == null || Number.isNaN(d.unitCost))) {
+    // A cost is no longer demanded up front: goods often arrive before the
+    // vendor's bill, and refusing the entry left the kitchen holding stock the
+    // app knew nothing about. The valuation concern that motivated this is
+    // handled at the source instead — applyMovement stores no cost rather than
+    // borrowing the product's last one, so the gap is visible and fixable via
+    // setBatchCostAction rather than silently wrong. A cost that IS given must
+    // still be a real number.
+    if (d.type === "restock" && d.unitCost != null && Number.isNaN(d.unitCost)) {
       ctx.addIssue({
         code: "custom",
         path: ["unitCost"],
-        message: "Enter the cost per unit for this restock.",
+        message: "Enter a valid cost per unit, or leave it blank.",
       });
     }
   });
@@ -364,5 +370,89 @@ export async function logMovementAction(
   revalidatePath("/products");
   revalidatePath("/dashboard");
   revalidatePath("/movements");
+  return { ok: true };
+}
+
+const batchCostSchema = z.object({
+  batchId: z.string().uuid(),
+  unitCost: z.coerce.number().min(0, "Enter a cost of 0 or more."),
+});
+
+/**
+ * Fill in a batch's cost once the vendor's bill turns up.
+ *
+ * Stock can now be logged before its price is known, which would be a trap on
+ * its own — the figure has to be settable later or those batches stay
+ * unpriced for good. Only the cost is touched; quantities and the FEFO order
+ * are left exactly as they are.
+ */
+export async function setBatchCostAction(
+  batchId: string,
+  unitCost: number,
+): Promise<ActionState> {
+  const { organization } = await requireRole("admin");
+  const parsed = batchCostSchema.safeParse({ batchId, unitCost });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  const [batch] = await db
+    .select({ id: stockBatches.id, productId: stockBatches.productId })
+    .from(stockBatches)
+    .innerJoin(products, eq(stockBatches.productId, products.id))
+    .where(
+      and(
+        eq(stockBatches.id, parsed.data.batchId),
+        eq(products.organizationId, organization.id),
+      ),
+    )
+    .limit(1);
+  if (!batch) return { error: "That batch no longer exists." };
+
+  const cost = parsed.data.unitCost;
+  await db
+    .update(stockBatches)
+    .set({ unitCost: String(cost) })
+    .where(eq(stockBatches.id, batch.id));
+
+  // Keep the restock line in Stock history agreeing with the batch it created.
+  // It's the one movement genuinely tied to this batch (stockMovements.batchId
+  // is set only on the restock that made it), so it can be corrected exactly.
+  // Draws are a different matter: usage spans several batches and records no
+  // batch link, so already-used stock keeps the cost it was valued at then.
+  const [restock] = await db
+    .select({ id: stockMovements.id, delta: stockMovements.deltaInStockUnit })
+    .from(stockMovements)
+    .where(and(eq(stockMovements.batchId, batch.id), eq(stockMovements.type, "restock")))
+    .limit(1);
+  if (restock) {
+    const qty = Math.abs(Number(restock.delta));
+    await db
+      .update(stockMovements)
+      .set({
+        unitCost: String(cost),
+        costAmount: String(Math.round(qty * cost * 100) / 100),
+      })
+      .where(eq(stockMovements.id, restock.id));
+  }
+
+  // If this is the product's newest batch, its price is now the best answer to
+  // "what does this cost" — so the figure that pre-fills the next restock
+  // follows it. An older batch being corrected leaves that alone.
+  const [newest] = await db
+    .select({ id: stockBatches.id })
+    .from(stockBatches)
+    .where(eq(stockBatches.productId, batch.productId))
+    .orderBy(desc(stockBatches.receivedDate), desc(stockBatches.createdAt))
+    .limit(1);
+  if (newest?.id === batch.id) {
+    await db
+      .update(products)
+      .set({ costPrice: String(cost) })
+      .where(eq(products.id, batch.productId));
+  }
+
+  revalidatePath(`/products/${batch.productId}`);
+  revalidatePath("/products");
   return { ok: true };
 }

@@ -180,6 +180,9 @@ export async function getProductDetail(orgId: string, id: string) {
         unitSymbol: units.symbol,
         deltaInStockUnit: stockMovements.deltaInStockUnit,
         balanceAfter: stockMovements.balanceAfter,
+        // Only set on the restock that created a batch — the one batch-level
+        // link the movement ledger has (see the batch cost editor).
+        batchId: stockMovements.batchId,
         note: stockMovements.note,
         costAmount: stockMovements.costAmount,
         invoiceId: stockMovements.invoiceId,

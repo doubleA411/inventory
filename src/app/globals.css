@@ -186,7 +186,6 @@ body {
 .driver-popover.sw-tour .driver-popover-close-btn {
   color: var(--color-muted);
 }
-
 /* ---- A4 print document (quotations / invoices) ---- */
 .a4-page {
   position: relative;

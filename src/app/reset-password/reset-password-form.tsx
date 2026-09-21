@@ -58,8 +58,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
           name="password"
           autoComplete="new-password"
           required
-          minLength={6}
-          placeholder="At least 6 characters"
+          minLength={8}
+          placeholder="At least 8 characters"
         />
       </div>
       <div>
@@ -71,7 +71,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
           name="confirmPassword"
           autoComplete="new-password"
           required
-          minLength={6}
+          minLength={8}
         />
       </div>
       {state.error && (

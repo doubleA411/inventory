@@ -8,6 +8,9 @@ import { sendEmail, getBaseUrl } from "@/lib/email";
 
 const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
+/** Kept in one place so the reset form, signup and team invite can't drift apart. */
+export const MIN_PASSWORD_LENGTH = 8;
+
 function hashToken(raw: string): string {
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
@@ -56,8 +59,11 @@ export async function resetPassword(
   newPassword: string,
 ): Promise<ResetResult> {
   if (!rawToken) return { ok: false, error: "This reset link is invalid." };
-  if (newPassword.length < 6) {
-    return { ok: false, error: "Password must be at least 6 characters." };
+  if (newPassword.length < MIN_PASSWORD_LENGTH) {
+    return {
+      ok: false,
+      error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+    };
   }
 
   const tokenHash = hashToken(rawToken);

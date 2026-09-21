@@ -23,7 +23,7 @@ export default async function NewPurchaseBillPage({
       <PurchaseBillEditor
         vendors={vendors.map((v) => ({ id: v.id, name: v.name }))}
         products={products}
-        units={units.map((u) => ({ id: u.id, symbol: u.symbol, groupId: u.groupId }))}
+        units={units.map((u) => ({ id: u.id, symbol: u.symbol, name: u.name, groupId: u.groupId }))}
         currency={organization.currency}
         defaultVendorId={sp.vendorId}
       />

@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireAuth } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { getPurchaseListFull } from "@/lib/purchase-list-queries";
 import { orgToDocOrg } from "@/components/document-view";
 import { PurchaseListView } from "@/components/purchase-list-view";
@@ -10,7 +10,7 @@ export default async function PurchaseListPrintPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { organization } = await requireAuth();
+  const { organization } = await requireRole("admin");
   const { id } = await params;
   const data = await getPurchaseListFull(organization.id, id);
   if (!data) notFound();

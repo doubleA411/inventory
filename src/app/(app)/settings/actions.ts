@@ -177,8 +177,13 @@ export async function uploadAssetAction(
   formData: FormData,
 ): Promise<ActionState> {
   const { organization } = await requireRole("admin");
+  // `field` arrives as an ordinary server-action argument, so it is caller
+  // input rather than something the client component pins down — check it
+  // against the allowlist's own keys before it is used as a column name below.
+  if (!Object.prototype.hasOwnProperty.call(ASSET_FIELDS, field)) {
+    return { error: "Unknown asset." };
+  }
   const cfg = ASSET_FIELDS[field];
-  if (!cfg) return { error: "Unknown asset." };
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
@@ -198,9 +203,18 @@ export async function uploadAssetAction(
     return { error: e instanceof Error ? e.message : "Upload failed." };
   }
 
+  // Explicit per-field writes rather than a computed key: the column being
+  // updated is now fixed by the code, not by the argument.
+  const patch =
+    field === "logoUrl"
+      ? { logoUrl: url }
+      : field === "letterheadUrl"
+        ? { letterheadUrl: url }
+        : { signatureUrl: url };
+
   await db
     .update(organizations)
-    .set({ [field]: url })
+    .set(patch)
     .where(eq(organizations.id, organization.id));
 
   revalidatePath("/settings");

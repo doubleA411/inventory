@@ -38,7 +38,7 @@ export default async function SettingsPage() {
               field="logoUrl"
               label="Company logo"
               hint="PNG, JPG, SVG or WebP. Shown in the app and on documents."
-              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              accept="image/png,image/jpeg,image/webp"
               currentUrl={o.logoUrl}
               aspect="square"
             />

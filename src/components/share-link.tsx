@@ -51,7 +51,11 @@ export function ShareLink({
 
   if (!token) {
     return (
-      <button className="btn-outline" onClick={create} disabled={pending}>
+      <button
+        className="btn-outline"
+        onClick={create}
+        disabled={pending}
+      >
         <Share2 className="h-4 w-4" /> {pending ? "Creating…" : "Create share link"}
       </button>
     );

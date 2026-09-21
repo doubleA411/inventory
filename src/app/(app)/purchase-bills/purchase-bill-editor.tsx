@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { fmtMoney } from "@/lib/utils";
 import { createPurchaseBill } from "./actions";
+import { ProductPicker } from "./product-picker";
 
 type VendorLite = { id: string; name: string };
 type ProductLite = { id: string; name: string; stockUnitId: string; costPrice: string | null };
-type UnitLite = { id: string; symbol: string; groupId: string };
+type UnitLite = { id: string; symbol: string; name: string; groupId: string };
 
 type Row = {
   key: string;
@@ -58,7 +59,13 @@ export function PurchaseBillEditor({
   const [notes, setNotes] = useState("");
   const [rows, setRows] = useState<Row[]>([newRow()]);
 
-  const productsById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  // Local copy so a product created inline is immediately pickable on the
+  // other lines too, without a page refresh mid-bill.
+  const [productList, setProductList] = useState<ProductLite[]>(products);
+  const productsById = useMemo(
+    () => new Map(productList.map((p) => [p.id, p])),
+    [productList],
+  );
 
   function updateRow(key: string, patch: Partial<Row>) {
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -200,18 +207,13 @@ export function PurchaseBillEditor({
                   </td>
                   <td className="py-2 pr-2">
                     {r.kind === "product" ? (
-                      <select
-                        className="input"
+                      <ProductPicker
+                        products={productList}
+                        units={units}
                         value={r.productId}
-                        onChange={(e) => pickProduct(r.key, e.target.value)}
-                      >
-                        <option value="">— Select product —</option>
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
+                        onPick={(id) => pickProduct(r.key, id)}
+                        onCreated={(p) => setProductList((list) => [...list, p])}
+                      />
                     ) : (
                       <input
                         className="input"
