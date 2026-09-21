@@ -64,6 +64,7 @@ export function ConfirmButton({
         className={cn("btn-ghost", className)}
         disabled={disabled || pending}
         title={triggerTitle}
+        aria-label={triggerTitle || label}
         onClick={() => setArmed(true)}
       >
         {icon}

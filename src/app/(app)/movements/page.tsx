@@ -181,8 +181,8 @@ export default async function MovementsPage({
         />
       ) : (
         <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="record-table-wrap overflow-x-auto">
+            <table className="record-table w-full text-sm">
               <thead>
                 <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
                   <th className="px-4 py-3 font-medium">Product</th>
@@ -198,7 +198,7 @@ export default async function MovementsPage({
                   const meta = MOVEMENT_META[m.type];
                   return (
                     <tr key={m.id} className="hover:bg-(--color-bg)">
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" data-mobile-primary>
                         <Link
                           href={`/products/${m.productId}`}
                           className="font-medium hover:underline"
@@ -209,17 +209,23 @@ export default async function MovementsPage({
                           <div className="text-xs text-(--color-muted)">{m.note}</div>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" data-mobile-label="Type">
                         <Badge tone={meta.tone}>{meta.label}</Badge>
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
+                      <td
+                        className="px-4 py-3 text-right tabular-nums"
+                        data-mobile-label="Change"
+                      >
                         {meta.sign}
                         {fmtQty(m.quantity)} {m.unitSymbol}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-(--color-muted)">
+                      <td
+                        className="px-4 py-3 text-right tabular-nums text-(--color-muted)"
+                        data-mobile-label="Cost"
+                      >
                         {Number(m.costAmount) > 0 ? fmtMoney(m.costAmount, cur) : "—"}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" data-mobile-label="Bill">
                         {m.invoiceId ? (
                           <Link
                             href={`/invoices/${m.invoiceId}`}
@@ -231,7 +237,10 @@ export default async function MovementsPage({
                           <span className="text-(--color-muted)">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-(--color-muted)">
+                      <td
+                        className="px-4 py-3 text-(--color-muted)"
+                        data-mobile-label="When"
+                      >
                         {fmtDate(m.createdAt)}
                       </td>
                     </tr>

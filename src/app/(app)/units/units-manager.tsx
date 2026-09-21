@@ -77,8 +77,8 @@ export function UnitsManager({
             <div className="border-b border-(--color-border) px-4 py-3 text-sm font-semibold">
               {group.name}
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="record-table-wrap overflow-x-auto">
+              <table className="record-table w-full text-sm">
                 <thead>
                   <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
                     <th className="px-4 py-2 font-medium">Unit</th>
@@ -92,22 +92,25 @@ export function UnitsManager({
                     const base = us.find((x) => x.isBase);
                     return (
                       <tr key={u.id}>
-                        <td className="px-4 py-2 font-medium">
+                        <td className="px-4 py-2 font-medium" data-mobile-primary>
                           {u.name}
                           {u.isBase && (
                             <Badge tone="primary">base</Badge>
                           )}
                         </td>
-                        <td className="px-4 py-2 font-mono">{u.symbol}</td>
-                        <td className="px-4 py-2 text-(--color-muted)">
+                        <td className="px-4 py-2 font-mono" data-mobile-label="Symbol">
+                          {u.symbol}
+                        </td>
+                        <td className="px-4 py-2 text-(--color-muted)" data-mobile-label="1 unit =">
                           {Number(u.factorToBase)} {base?.symbol ?? ""}
                         </td>
-                        <td className="px-4 py-2 text-right">
+                        <td className="px-4 py-2 text-right" data-mobile-actions>
                           {!u.isBase && (
                             <button
                               className="btn-ghost"
                               onClick={() => removeUnit(u.id)}
                               title="Delete unit"
+                              aria-label={`Delete ${u.name}`}
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>

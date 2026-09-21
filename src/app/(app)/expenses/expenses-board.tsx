@@ -84,11 +84,11 @@ export function ExpensesBoard({
               <div className="border-b border-t border-(--color-border) bg-(--color-bg) px-4 py-2 text-sm font-medium first:border-t-0">
                 {fmtDate(day.date)}
               </div>
-              <table className="w-full text-sm">
+              <table className="record-table w-full text-sm">
                 <tbody className="divide-y divide-(--color-border)">
                   {day.items.map((row) => (
                     <tr key={`${row.source}-${row.id}`}>
-                      <td className="w-40 px-4 py-2.5">
+                      <td className="w-40 px-4 py-2.5" data-mobile-label="Category">
                         <span
                           className={
                             row.source === "stock"
@@ -100,7 +100,7 @@ export function ExpensesBoard({
                           {row.category}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-4 py-2.5" data-mobile-span>
                         {row.description}
                         {row.quotationNumber && (
                           <span className="ml-2 text-xs text-(--color-muted)">
@@ -108,10 +108,13 @@ export function ExpensesBoard({
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">
+                      <td
+                        className="px-4 py-2.5 text-right tabular-nums"
+                        data-mobile-label="Amount"
+                      >
                         {fmtMoney(row.amount, cur)}
                       </td>
-                      <td className="w-20 px-4 py-2.5 text-right">
+                      <td className="w-20 px-4 py-2.5 text-right" data-mobile-actions>
                         {row.source === "stock" ? (
                           row.productId ? (
                             <Link

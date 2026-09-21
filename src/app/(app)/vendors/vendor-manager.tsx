@@ -174,8 +174,8 @@ export function VendorManager({
           No vendors yet. Add one, or pick one while recording a purchase.
         </div>
       ) : (
-        <div className="card overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="record-table-wrap card overflow-hidden">
+          <table className="record-table w-full text-sm">
             <thead>
               <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
                 <th className="px-4 py-3 font-medium">Name</th>
@@ -191,18 +191,24 @@ export function VendorManager({
                 const { due, credit } = v.balance;
                 return (
                   <tr key={v.id} className="hover:bg-(--color-bg)">
-                    <td className="px-4 py-3 font-medium">
+                    <td className="px-4 py-3 font-medium" data-mobile-primary>
                       <Link href={`/vendors/${v.id}`} className="hover:underline">
                         {v.name}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-(--color-muted)">
+                    <td className="px-4 py-3 text-(--color-muted)" data-mobile-label="Location">
                       {[v.location, v.district].filter(Boolean).join(", ") || "—"}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums">
+                    <td
+                      className="px-4 py-3 text-right tabular-nums"
+                      data-mobile-label="Purchased"
+                    >
                       {fmtMoney(v.purchased, currency)}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums">
+                    <td
+                      className="px-4 py-3 text-right tabular-nums"
+                      data-mobile-label="Due"
+                    >
                       {due > 0 ? (
                         <span className="text-(--color-danger)">{fmtMoney(due, currency)}</span>
                       ) : credit > 0 ? (
@@ -214,9 +220,16 @@ export function VendorManager({
                         "—"
                       )}
                     </td>
-                    <td className="px-4 py-3 text-(--color-muted)">{v.phone ?? "—"}</td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <button className="btn-ghost" onClick={() => openEdit(v)} title="Edit">
+                    <td className="px-4 py-3 text-(--color-muted)" data-mobile-label="Phone">
+                      {v.phone ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap" data-mobile-actions>
+                      <button
+                        className="btn-ghost"
+                        onClick={() => openEdit(v)}
+                        title="Edit vendor"
+                        aria-label={`Edit ${v.name}`}
+                      >
                         <Pencil className="h-4 w-4" />
                       </button>
                       <ConfirmButton

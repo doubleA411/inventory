@@ -119,8 +119,8 @@ export function CustomerManager({ customers }: { customers: Cust[] }) {
           No customers match &ldquo;{query}&rdquo;.
         </div>
       ) : (
-        <div className="card overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="record-table-wrap card overflow-hidden">
+          <table className="record-table w-full text-sm">
             <thead>
               <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
                 <th className="px-4 py-3 font-medium">Name</th>
@@ -133,18 +133,27 @@ export function CustomerManager({ customers }: { customers: Cust[] }) {
             <tbody className="divide-y divide-(--color-border)">
               {filtered.map((c) => (
                 <tr key={c.id} className="hover:bg-(--color-bg)">
-                  <td className="px-4 py-3 font-medium">
+                  <td className="px-4 py-3 font-medium" data-mobile-primary>
                     <Link href={`/customers/${c.id}`} className="hover:underline">
                       {c.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-(--color-muted)">{c.gstin ?? "—"}</td>
-                  <td className="px-4 py-3 text-(--color-muted)">
+                  <td className="px-4 py-3 text-(--color-muted)" data-mobile-label="GSTIN">
+                    {c.gstin ?? "—"}
+                  </td>
+                  <td className="px-4 py-3 text-(--color-muted)" data-mobile-label="Location">
                     {[c.location, c.district].filter(Boolean).join(", ") || "—"}
                   </td>
-                  <td className="px-4 py-3 text-(--color-muted)">{c.phone ?? "—"}</td>
-                  <td className="px-4 py-3 text-right">
-                    <button className="btn-ghost" onClick={() => openEdit(c)} title="Edit">
+                  <td className="px-4 py-3 text-(--color-muted)" data-mobile-label="Phone">
+                    {c.phone ?? "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right" data-mobile-actions>
+                    <button
+                      className="btn-ghost"
+                      onClick={() => openEdit(c)}
+                      title="Edit customer"
+                      aria-label={`Edit ${c.name}`}
+                    >
                       <Pencil className="h-4 w-4" />
                     </button>
                     <ConfirmButton

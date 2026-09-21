@@ -54,8 +54,8 @@ export function TeamManager({
   return (
     <div className="grid gap-6 lg:grid-cols-3">
       <div className="lg:col-span-2">
-        <div className="card overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="record-table-wrap card overflow-hidden">
+          <table className="record-table w-full text-sm">
             <thead>
               <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
                 <th className="px-4 py-3 font-medium">Member</th>
@@ -67,7 +67,7 @@ export function TeamManager({
             <tbody className="divide-y divide-(--color-border)">
               {members.map((m) => (
                 <tr key={m.membershipId}>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" data-mobile-primary>
                     <div className="font-medium">
                       {m.name}
                       {m.userId === currentUserId && (
@@ -76,13 +76,13 @@ export function TeamManager({
                     </div>
                     <div className="text-xs text-(--color-muted)">{m.email}</div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" data-mobile-label="Role">
                     <Badge tone={roleTone[m.role]}>{m.role}</Badge>
                   </td>
-                  <td className="px-4 py-3 text-(--color-muted)">
+                  <td className="px-4 py-3 text-(--color-muted)" data-mobile-label="Added">
                     {fmtDate(m.createdAt)}
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-3 text-right" data-mobile-actions>
                     {m.role !== "owner" && m.userId !== currentUserId && (
                       <ConfirmButton
                         compact
