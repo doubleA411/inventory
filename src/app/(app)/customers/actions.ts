@@ -80,9 +80,10 @@ export async function saveCustomer(
 }
 
 export async function deleteCustomer(id: string): Promise<CustomerState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   await db
-    .delete(customers)
+    .update(customers)
+    .set({ deletedAt: new Date(), deletedBy: user.id })
     .where(and(eq(customers.id, id), eq(customers.organizationId, organization.id)));
   revalidatePath("/customers");
   return { ok: true };

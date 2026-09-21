@@ -1,5 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { listBackups, signedBackupUrl } from "@/lib/storage";
+import Link from "next/link";
+import { ArchiveRestore } from "lucide-react";
 import { PageHeader } from "@/components/ui";
 import { SettingsForm } from "./settings-form";
 import { AssetUpload } from "./asset-upload";
@@ -100,6 +102,18 @@ export default async function SettingsPage() {
             </p>
           </div>
           <BackupPanel recent={recentBackups} />
+        </div>
+
+        <div className="card flex flex-wrap items-center justify-between gap-4 p-6">
+          <div>
+            <h2 className="text-base font-semibold">Archived records</h2>
+            <p className="mt-0.5 text-sm text-(--color-muted)">
+              Restore products, contacts, expenses, and documents removed from active work.
+            </p>
+          </div>
+          <Link href="/settings/archive" className="btn-outline">
+            <ArchiveRestore className="h-4 w-4" /> View archive
+          </Link>
         </div>
 
         <SettingsForm

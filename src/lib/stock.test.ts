@@ -30,7 +30,6 @@ describe("convertQuantity", () => {
 describe("applyMovement (FEFO + conversion + ledger)", () => {
   let orgId: string;
   let kgId: string;
-  let gId: string;
   let litreId: string;
   let mlId: string;
   const createdProductIds: string[] = [];
@@ -64,7 +63,6 @@ describe("applyMovement (FEFO + conversion + ledger)", () => {
     if (!org) throw new Error("No org — run `npm run db:seed` first.");
     orgId = org.id;
     kgId = await unitId("kg");
-    gId = await unitId("g");
     litreId = await unitId("L");
     mlId = await unitId("ml");
   });

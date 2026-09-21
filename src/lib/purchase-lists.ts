@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { purchaseLists, purchaseListItems, type Organization } from "@/lib/db/schema";
 import { financialYear, formatDocNumber } from "@/lib/tax";
@@ -104,7 +104,13 @@ export async function updatePurchaseListCore(
   const [existing] = await db
     .select({ status: purchaseLists.status })
     .from(purchaseLists)
-    .where(and(eq(purchaseLists.id, id), eq(purchaseLists.organizationId, orgId)))
+    .where(
+      and(
+        eq(purchaseLists.id, id),
+        eq(purchaseLists.organizationId, orgId),
+        isNull(purchaseLists.deletedAt),
+      ),
+    )
     .limit(1);
   if (!existing) return { ok: false, error: "Purchase list not found." };
   if (existing.status !== "draft") {
@@ -145,7 +151,13 @@ export async function duplicatePurchaseListCore(
   const [source] = await db
     .select()
     .from(purchaseLists)
-    .where(and(eq(purchaseLists.id, id), eq(purchaseLists.organizationId, org.id)))
+    .where(
+      and(
+        eq(purchaseLists.id, id),
+        eq(purchaseLists.organizationId, org.id),
+        isNull(purchaseLists.deletedAt),
+      ),
+    )
     .limit(1);
   if (!source) return { ok: false, error: "Purchase list not found." };
   if (!source.vendorId) return { ok: false, error: "Original list has no vendor." };
@@ -171,11 +183,22 @@ export async function markPurchaseListSentCore(orgId: string, id: string): Promi
   await db
     .update(purchaseLists)
     .set({ status: "sent" })
-    .where(and(eq(purchaseLists.id, id), eq(purchaseLists.organizationId, orgId)));
+    .where(
+      and(
+        eq(purchaseLists.id, id),
+        eq(purchaseLists.organizationId, orgId),
+        isNull(purchaseLists.deletedAt),
+      ),
+    );
 }
 
-export async function deletePurchaseListCore(orgId: string, id: string): Promise<void> {
+export async function deletePurchaseListCore(
+  orgId: string,
+  id: string,
+  userId?: string,
+): Promise<void> {
   await db
-    .delete(purchaseLists)
+    .update(purchaseLists)
+    .set({ deletedAt: new Date(), deletedBy: userId ?? null })
     .where(and(eq(purchaseLists.id, id), eq(purchaseLists.organizationId, orgId)));
 }

@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { and, asc, desc, eq, gte, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   expenseCategories,
@@ -88,7 +88,9 @@ export async function saveExpense(
     await db
       .update(expenses)
       .set(values)
-      .where(and(eq(expenses.id, d.id), eq(expenses.organizationId, orgId)));
+      .where(
+        and(eq(expenses.id, d.id), eq(expenses.organizationId, orgId), isNull(expenses.deletedAt)),
+      );
     return { ok: true, id: d.id };
   }
 
@@ -103,14 +105,15 @@ export async function getExpense(orgId: string, id: string) {
   const [row] = await db
     .select()
     .from(expenses)
-    .where(and(eq(expenses.id, id), eq(expenses.organizationId, orgId)))
+    .where(and(eq(expenses.id, id), eq(expenses.organizationId, orgId), isNull(expenses.deletedAt)))
     .limit(1);
   return row ?? null;
 }
 
-export async function deleteExpense(orgId: string, id: string) {
+export async function deleteExpense(orgId: string, id: string, userId?: string) {
   await db
-    .delete(expenses)
+    .update(expenses)
+    .set({ deletedAt: new Date(), deletedBy: userId ?? null })
     .where(and(eq(expenses.id, id), eq(expenses.organizationId, orgId)));
 }
 
@@ -230,7 +233,7 @@ export async function getExpenseLedger(
   }
 
   if (wantExpenses) {
-    const conds = [eq(expenses.organizationId, orgId)];
+    const conds = [eq(expenses.organizationId, orgId), isNull(expenses.deletedAt)];
     if (filters.from) conds.push(gte(expenses.expenseDate, filters.from));
     if (filters.to) conds.push(lte(expenses.expenseDate, filters.to));
     if (filters.quotationId) conds.push(eq(expenses.quotationId, filters.quotationId));
@@ -316,6 +319,7 @@ export async function expensesTotal(orgId: string, from: string, to: string): Pr
     .where(
       and(
         eq(expenses.organizationId, orgId),
+        isNull(expenses.deletedAt),
         gte(expenses.expenseDate, from),
         lte(expenses.expenseDate, to),
       ),

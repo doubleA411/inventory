@@ -223,6 +223,8 @@ export const products = pgTable(
     ),
     notes: text("notes"),
     isActive: boolean("is_active").notNull().default(true),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: uuid("deleted_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -423,6 +425,8 @@ export const customers = pgTable(
     phone: text("phone"),
     email: text("email"),
     notes: text("notes"),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: uuid("deleted_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("customers_org_idx").on(t.organizationId)],
@@ -481,6 +485,8 @@ export const quotations = pgTable(
     takenBy: uuid("taken_by").references(() => users.id, { onDelete: "set null" }),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: uuid("deleted_by").references(() => users.id, { onDelete: "set null" }),
     // Public view link token (e.g. for WhatsApp) — null until generated,
     // cleared on revoke. Not a foreign key; just a random opaque credential.
     shareToken: text("share_token").unique(),
@@ -556,6 +562,8 @@ export const invoices = pgTable(
     approvedBy: uuid("approved_by").references(() => users.id, { onDelete: "set null" }),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: uuid("deleted_by").references(() => users.id, { onDelete: "set null" }),
     shareToken: text("share_token").unique(),
   },
   (t) => [
@@ -684,6 +692,8 @@ export const expenses = pgTable(
     notes: text("notes"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: uuid("deleted_by").references(() => users.id, { onDelete: "set null" }),
   },
   (t) => [
     index("expenses_org_date_idx").on(t.organizationId, t.expenseDate),
@@ -758,6 +768,8 @@ export const vendors = pgTable(
     openingBalance: numeric("opening_balance", { precision: 14, scale: 2 })
       .notNull()
       .default("0"),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: uuid("deleted_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("vendors_org_idx").on(t.organizationId)],
@@ -784,6 +796,8 @@ export const purchaseBills = pgTable(
     notes: text("notes"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: uuid("deleted_by").references(() => users.id, { onDelete: "set null" }),
   },
   (t) => [
     unique("purchase_bills_org_number_uq").on(t.organizationId, t.number),
@@ -871,6 +885,8 @@ export const purchaseLists = pgTable(
     notes: text("notes"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: uuid("deleted_by").references(() => users.id, { onDelete: "set null" }),
   },
   (t) => [
     unique("purchase_lists_org_number_uq").on(t.organizationId, t.number),

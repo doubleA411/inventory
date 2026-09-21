@@ -60,8 +60,8 @@ export async function revokeInvoiceApproval(id: string): Promise<void> {
 export async function deleteInvoice(
   id: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { organization } = await requireRole("admin");
-  const result = await deleteInvoiceCore(organization.id, id);
+  const { organization, user } = await requireRole("admin");
+  const result = await deleteInvoiceCore(organization.id, id, user.id);
   if (result.ok) {
     revalidatePath("/invoices");
     revalidatePath("/dashboard");

@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   vendors,
@@ -23,7 +23,13 @@ export async function listProductsForPicker(orgId: string) {
       costPrice: products.costPrice,
     })
     .from(products)
-    .where(and(eq(products.organizationId, orgId), eq(products.isActive, true)))
+    .where(
+      and(
+        eq(products.organizationId, orgId),
+        eq(products.isActive, true),
+        isNull(products.deletedAt),
+      ),
+    )
     .orderBy(asc(products.name));
 }
 
@@ -42,9 +48,13 @@ export async function listVendors(orgId: string) {
     .from(vendors)
     .leftJoin(
       purchaseBills,
-      and(eq(purchaseBills.vendorId, vendors.id), eq(purchaseBills.status, "active")),
+      and(
+        eq(purchaseBills.vendorId, vendors.id),
+        eq(purchaseBills.status, "active"),
+        isNull(purchaseBills.deletedAt),
+      ),
     )
-    .where(eq(vendors.organizationId, orgId))
+    .where(and(eq(vendors.organizationId, orgId), isNull(vendors.deletedAt)))
     .groupBy(vendors.id)
     .orderBy(asc(vendors.name));
 
@@ -76,11 +86,13 @@ export async function listVendors(orgId: string) {
   }));
 }
 
-export async function getVendor(orgId: string, id: string) {
+export async function getVendor(orgId: string, id: string, includeArchived = false) {
+  const conds = [eq(vendors.id, id), eq(vendors.organizationId, orgId)];
+  if (!includeArchived) conds.push(isNull(vendors.deletedAt));
   const [v] = await db
     .select()
     .from(vendors)
-    .where(and(eq(vendors.id, id), eq(vendors.organizationId, orgId)))
+    .where(and(...conds))
     .limit(1);
   return v ?? null;
 }
@@ -89,7 +101,13 @@ export async function listPurchaseBillsForVendor(orgId: string, vendorId: string
   return db
     .select()
     .from(purchaseBills)
-    .where(and(eq(purchaseBills.vendorId, vendorId), eq(purchaseBills.organizationId, orgId)))
+    .where(
+      and(
+        eq(purchaseBills.vendorId, vendorId),
+        eq(purchaseBills.organizationId, orgId),
+        isNull(purchaseBills.deletedAt),
+      ),
+    )
     .orderBy(desc(purchaseBills.createdAt));
 }
 
@@ -152,7 +170,13 @@ export async function getPurchaseBillFull(orgId: string, id: string) {
   const [bill] = await db
     .select()
     .from(purchaseBills)
-    .where(and(eq(purchaseBills.id, id), eq(purchaseBills.organizationId, orgId)))
+    .where(
+      and(
+        eq(purchaseBills.id, id),
+        eq(purchaseBills.organizationId, orgId),
+        isNull(purchaseBills.deletedAt),
+      ),
+    )
     .limit(1);
   if (!bill) return null;
   const rawItems = await db
@@ -161,7 +185,7 @@ export async function getPurchaseBillFull(orgId: string, id: string) {
     .where(eq(purchaseBillItems.purchaseBillId, id))
     .orderBy(asc(purchaseBillItems.position));
   const items = await withBatchState(orgId, rawItems);
-  const vendor = bill.vendorId ? await getVendor(orgId, bill.vendorId) : null;
+  const vendor = bill.vendorId ? await getVendor(orgId, bill.vendorId, true) : null;
   const pays = await db
     .select({
       id: purchaseBillPayments.id,
@@ -269,7 +293,13 @@ export async function vendorsSummary(orgId: string) {
   const [billCount] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(purchaseBills)
-    .where(and(eq(purchaseBills.organizationId, orgId), eq(purchaseBills.status, "active")));
+    .where(
+      and(
+        eq(purchaseBills.organizationId, orgId),
+        eq(purchaseBills.status, "active"),
+        isNull(purchaseBills.deletedAt),
+      ),
+    );
   return {
     billCount: billCount?.count ?? 0,
     due: round2(rows.reduce((s, r) => s + r.balance.due, 0)),

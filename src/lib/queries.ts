@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gt, lt, lte, sql, gte, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt, lte, sql, gte, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   products,
@@ -124,7 +124,7 @@ export async function listProducts(
       .from(products)
       .leftJoin(categories, eq(products.categoryId, categories.id))
       .innerJoin(units, eq(products.stockUnitId, units.id))
-      .where(eq(products.organizationId, orgId))
+      .where(and(eq(products.organizationId, orgId), isNull(products.deletedAt)))
       .orderBy(asc(products.name)),
     costTrendsByProduct(orgId),
   ]);
@@ -156,7 +156,9 @@ export async function getProductDetail(orgId: string, id: string) {
   const [product] = await db
     .select()
     .from(products)
-    .where(and(eq(products.id, id), eq(products.organizationId, orgId)))
+    .where(
+      and(eq(products.id, id), eq(products.organizationId, orgId), isNull(products.deletedAt)),
+    )
     .limit(1);
   if (!product) return null;
 
@@ -258,7 +260,7 @@ export async function recentMovements(orgId: string, limit = 15) {
     .innerJoin(products, eq(stockMovements.productId, products.id))
     .innerJoin(units, eq(stockMovements.unitId, units.id))
     .leftJoin(users, eq(stockMovements.userId, users.id))
-    .where(eq(stockMovements.organizationId, orgId))
+    .where(and(eq(stockMovements.organizationId, orgId), isNull(products.deletedAt)))
     .orderBy(desc(stockMovements.createdAt))
     .limit(limit);
 }
@@ -289,7 +291,7 @@ export async function listAllMovements(
     limit?: number;
   },
 ) {
-  const conds = [eq(stockMovements.organizationId, orgId)];
+  const conds = [eq(stockMovements.organizationId, orgId), isNull(products.deletedAt)];
   if (
     opts?.type &&
     ["restock", "usage", "waste", "adjustment"].includes(opts.type)
@@ -428,6 +430,7 @@ export async function dashboardStats(orgId: string): Promise<DashboardStats> {
     .where(
       and(
         eq(stockBatches.organizationId, orgId),
+        isNull(products.deletedAt),
         gt(stockBatches.quantityRemaining, "0"),
       ),
     );
@@ -439,6 +442,7 @@ export async function dashboardStats(orgId: string): Promise<DashboardStats> {
     expBase.where(
       and(
         eq(stockBatches.organizationId, orgId),
+        isNull(products.deletedAt),
         gt(stockBatches.quantityRemaining, "0"),
         isNotNull(stockBatches.expiryDate),
         gte(stockBatches.expiryDate, todayStr),

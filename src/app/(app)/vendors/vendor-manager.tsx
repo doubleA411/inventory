@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Pencil, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
+import { Archive, Pencil, Plus, Search, UserPlus, X } from "lucide-react";
 import { ConfirmButton } from "@/components/confirm-button";
 import { saveVendor, deleteVendor, quickCreateProduct } from "./actions";
 import { fmtMoney } from "@/lib/utils";
@@ -221,12 +221,12 @@ export function VendorManager({
                       </button>
                       <ConfirmButton
                         compact
-                        icon={<Trash2 className="h-4 w-4" />}
+                        icon={<Archive className="h-4 w-4" />}
                         label=""
-                        triggerTitle="Delete vendor"
-                        question="Delete this vendor?"
-                        confirmLabel="Delete vendor"
-                        busyLabel="Deleting…"
+                        triggerTitle="Archive vendor"
+                        question="Archive this vendor?"
+                        confirmLabel="Archive vendor"
+                        busyLabel="Archiving…"
                         onConfirm={async () => {
                           await deleteVendor(v.id);
                           router.refresh();

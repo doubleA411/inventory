@@ -34,8 +34,8 @@ export async function cancelPurchaseBill(id: string, vendorId: string | null): P
 }
 
 export async function deletePurchaseBill(id: string, vendorId: string | null): Promise<void> {
-  const { organization } = await requireRole("admin");
-  await deletePurchaseBillCore(organization.id, id);
+  const { organization, user } = await requireRole("admin");
+  await deletePurchaseBillCore(organization.id, id, user.id);
   revalidatePath("/vendors");
   if (vendorId) revalidatePath(`/vendors/${vendorId}`);
 }

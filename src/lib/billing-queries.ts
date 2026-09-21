@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gt, gte, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   customers,
@@ -15,15 +15,17 @@ export async function listCustomers(orgId: string) {
   return db
     .select()
     .from(customers)
-    .where(eq(customers.organizationId, orgId))
+    .where(and(eq(customers.organizationId, orgId), isNull(customers.deletedAt)))
     .orderBy(asc(customers.name));
 }
 
-export async function getCustomer(orgId: string, id: string) {
+export async function getCustomer(orgId: string, id: string, includeArchived = false) {
+  const conds = [eq(customers.id, id), eq(customers.organizationId, orgId)];
+  if (!includeArchived) conds.push(isNull(customers.deletedAt));
   const [c] = await db
     .select()
     .from(customers)
-    .where(and(eq(customers.id, id), eq(customers.organizationId, orgId)))
+    .where(and(...conds))
     .limit(1);
   return c ?? null;
 }
@@ -38,7 +40,11 @@ export async function findCustomerByPhone(
   phone: string,
   excludeId?: string,
 ) {
-  const conds = [eq(customers.organizationId, orgId), eq(customers.phone, phone)];
+  const conds = [
+    eq(customers.organizationId, orgId),
+    eq(customers.phone, phone),
+    isNull(customers.deletedAt),
+  ];
   if (excludeId) conds.push(ne(customers.id, excludeId));
   const [c] = await db
     .select({ id: customers.id, name: customers.name })
@@ -53,7 +59,13 @@ export async function listQuotationsForCustomer(orgId: string, customerId: strin
   return db
     .select()
     .from(quotations)
-    .where(and(eq(quotations.customerId, customerId), eq(quotations.organizationId, orgId)))
+    .where(
+      and(
+        eq(quotations.customerId, customerId),
+        eq(quotations.organizationId, orgId),
+        isNull(quotations.deletedAt),
+      ),
+    )
     .orderBy(desc(quotations.createdAt));
 }
 
@@ -62,7 +74,13 @@ export async function listInvoicesForCustomer(orgId: string, customerId: string)
   return db
     .select()
     .from(invoices)
-    .where(and(eq(invoices.customerId, customerId), eq(invoices.organizationId, orgId)))
+    .where(
+      and(
+        eq(invoices.customerId, customerId),
+        eq(invoices.organizationId, orgId),
+        isNull(invoices.deletedAt),
+      ),
+    )
     .orderBy(desc(invoices.createdAt));
 }
 
@@ -81,7 +99,13 @@ export async function listPaymentsForCustomer(orgId: string, customerId: string)
     })
     .from(payments)
     .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
-    .where(and(eq(invoices.customerId, customerId), eq(payments.organizationId, orgId)))
+    .where(
+      and(
+        eq(invoices.customerId, customerId),
+        eq(payments.organizationId, orgId),
+        isNull(invoices.deletedAt),
+      ),
+    )
     .orderBy(desc(payments.paidAt));
 }
 
@@ -89,7 +113,7 @@ export async function listQuotations(
   orgId: string,
   opts?: { from?: string; to?: string; search?: string },
 ) {
-  const conds = [eq(quotations.organizationId, orgId)];
+  const conds = [eq(quotations.organizationId, orgId), isNull(quotations.deletedAt)];
   if (opts?.from) conds.push(gte(quotations.issueDate, opts.from));
   if (opts?.to) conds.push(lte(quotations.issueDate, opts.to));
   const rows = await db
@@ -142,7 +166,7 @@ export async function listQuotationsForPicker(orgId: string) {
     .from(quotations)
     .leftJoin(customers, eq(quotations.customerId, customers.id))
     .leftJoin(quotationItems, eq(quotationItems.quotationId, quotations.id))
-    .where(eq(quotations.organizationId, orgId))
+    .where(and(eq(quotations.organizationId, orgId), isNull(quotations.deletedAt)))
     .groupBy(quotations.id, customers.name)
     .orderBy(desc(quotations.createdAt));
   return rows.map((r) => ({
@@ -197,6 +221,7 @@ export async function listUpcomingEvents(orgId: string, limit = 8) {
     .where(
       and(
         eq(quotations.organizationId, orgId),
+        isNull(quotations.deletedAt),
         ne(quotations.status, "rejected"),
         ne(quotations.status, "expired"),
         or(sql`${quotations.takenAt} is not null`, gt(quotations.advanceAmount, "0")),
@@ -229,7 +254,9 @@ export async function getQuotationFull(orgId: string, id: string) {
   const [q] = await db
     .select()
     .from(quotations)
-    .where(and(eq(quotations.id, id), eq(quotations.organizationId, orgId)))
+    .where(
+      and(eq(quotations.id, id), eq(quotations.organizationId, orgId), isNull(quotations.deletedAt)),
+    )
     .limit(1);
   if (!q) return null;
   const items = await db
@@ -238,7 +265,7 @@ export async function getQuotationFull(orgId: string, id: string) {
     .where(eq(quotationItems.quotationId, id))
     .orderBy(asc(quotationItems.position));
   const customer = q.customerId
-    ? await getCustomer(orgId, q.customerId)
+    ? await getCustomer(orgId, q.customerId, true)
     : null;
   return { quotation: q, items, customer };
 }
@@ -247,7 +274,7 @@ export async function listInvoices(
   orgId: string,
   opts?: { from?: string; to?: string; search?: string },
 ) {
-  const conds = [eq(invoices.organizationId, orgId)];
+  const conds = [eq(invoices.organizationId, orgId), isNull(invoices.deletedAt)];
   if (opts?.from) conds.push(gte(invoices.issueDate, opts.from));
   if (opts?.to) conds.push(lte(invoices.issueDate, opts.to));
   const rows = await db
@@ -281,7 +308,9 @@ export async function getInvoiceFull(orgId: string, id: string) {
   const [inv] = await db
     .select()
     .from(invoices)
-    .where(and(eq(invoices.id, id), eq(invoices.organizationId, orgId)))
+    .where(
+      and(eq(invoices.id, id), eq(invoices.organizationId, orgId), isNull(invoices.deletedAt)),
+    )
     .limit(1);
   if (!inv) return null;
   const items = await db
@@ -289,7 +318,7 @@ export async function getInvoiceFull(orgId: string, id: string) {
     .from(invoiceItems)
     .where(eq(invoiceItems.invoiceId, id))
     .orderBy(asc(invoiceItems.position));
-  const customer = inv.customerId ? await getCustomer(orgId, inv.customerId) : null;
+  const customer = inv.customerId ? await getCustomer(orgId, inv.customerId, true) : null;
   const pays = await db
     .select({
       id: payments.id,
@@ -336,7 +365,7 @@ export async function billingSummary(orgId: string) {
       dueDate: invoices.dueDate,
     })
     .from(invoices)
-    .where(eq(invoices.organizationId, orgId));
+    .where(and(eq(invoices.organizationId, orgId), isNull(invoices.deletedAt)));
 
   let outstanding = 0;
   let overdueCount = 0;

@@ -53,7 +53,7 @@ export async function markPurchaseListSent(id: string, vendorId: string | null):
 }
 
 export async function deletePurchaseList(id: string, vendorId: string | null): Promise<void> {
-  const { organization } = await requireRole("admin");
-  await deletePurchaseListCore(organization.id, id);
+  const { organization, user } = await requireRole("admin");
+  await deletePurchaseListCore(organization.id, id, user.id);
   revalidateAfterSave(vendorId);
 }

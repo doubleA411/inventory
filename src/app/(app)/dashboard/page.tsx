@@ -3,7 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { dashboardStats, recentMovements, usageCostSummary } from "@/lib/queries";
 import { expensesTotal } from "@/lib/expenses";
 import { listUpcomingEvents } from "@/lib/billing-queries";
-import { PageHeader, StatCard, Badge, EmptyState } from "@/components/ui";
+import { PageHeader, StatCard, Badge } from "@/components/ui";
 import { fmtQty, fmtMoney, fmtDate } from "@/lib/utils";
 import { MOVEMENT_META } from "@/lib/labels";
 import { AlertTriangle, CalendarClock, Clock, PackageX, ShieldAlert } from "lucide-react";

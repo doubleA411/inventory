@@ -1,6 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { quotations, invoices, organizations } from "@/lib/db/schema";
 
@@ -20,7 +20,9 @@ export async function generateQuotationShareToken(
   await db
     .update(quotations)
     .set({ shareToken: token })
-    .where(and(eq(quotations.id, id), eq(quotations.organizationId, orgId)));
+    .where(
+      and(eq(quotations.id, id), eq(quotations.organizationId, orgId), isNull(quotations.deletedAt)),
+    );
   return token;
 }
 
@@ -37,7 +39,7 @@ export async function getQuotationByShareToken(token: string) {
     .select({ quotation: quotations, organization: organizations })
     .from(quotations)
     .innerJoin(organizations, eq(quotations.organizationId, organizations.id))
-    .where(eq(quotations.shareToken, token))
+    .where(and(eq(quotations.shareToken, token), isNull(quotations.deletedAt)))
     .limit(1);
   return row ?? null;
 }
@@ -51,7 +53,7 @@ export async function generateInvoiceShareToken(orgId: string, id: string): Prom
   await db
     .update(invoices)
     .set({ shareToken: token })
-    .where(and(eq(invoices.id, id), eq(invoices.organizationId, orgId)));
+    .where(and(eq(invoices.id, id), eq(invoices.organizationId, orgId), isNull(invoices.deletedAt)));
   return token;
 }
 
@@ -67,7 +69,7 @@ export async function getInvoiceByShareToken(token: string) {
     .select({ invoice: invoices, organization: organizations })
     .from(invoices)
     .innerJoin(organizations, eq(invoices.organizationId, organizations.id))
-    .where(eq(invoices.shareToken, token))
+    .where(and(eq(invoices.shareToken, token), isNull(invoices.deletedAt)))
     .limit(1);
   return row ?? null;
 }

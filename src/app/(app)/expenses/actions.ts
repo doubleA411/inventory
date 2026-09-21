@@ -19,8 +19,8 @@ export async function saveExpenseAction(raw: ExpenseInput): Promise<SaveResult> 
 }
 
 export async function deleteExpenseAction(id: string): Promise<void> {
-  const { organization } = await requireRole("admin");
-  await deleteExpense(organization.id, id);
+  const { organization, user } = await requireRole("admin");
+  await deleteExpense(organization.id, id, user.id);
   revalidatePath("/expenses");
 }
 

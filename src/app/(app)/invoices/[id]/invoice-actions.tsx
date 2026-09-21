@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Send, Ban, Trash2, ShieldCheck, RotateCcw } from "lucide-react";
+import { Archive, Send, Ban, ShieldCheck, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui";
 import { ConfirmButton } from "@/components/confirm-button";
 import {
@@ -100,12 +100,12 @@ export function InvoiceActions({
         )}
 
         <ConfirmButton
-          icon={<Trash2 className="h-4 w-4" />}
-          label="Delete"
-          question="Delete this invoice?"
-          detail="It disappears for good. If money was collected, cancel it instead."
-          confirmLabel="Delete invoice"
-          busyLabel="Deleting…"
+          icon={<Archive className="h-4 w-4" />}
+          label="Archive"
+          question="Archive this invoice?"
+          detail="It leaves active lists but stays recoverable in Settings. If money was collected, cancel it instead."
+          confirmLabel="Archive invoice"
+          busyLabel="Archiving…"
           disabled={pending}
           onConfirm={async () => {
             setError(null);

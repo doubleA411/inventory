@@ -41,8 +41,8 @@ export async function setQuotationStatus(
 export async function deleteQuotation(
   id: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { organization } = await requireRole("admin");
-  const result = await deleteQuotationCore(organization.id, id);
+  const { organization, user } = await requireRole("admin");
+  const result = await deleteQuotationCore(organization.id, id, user.id);
   if (result.ok) {
     revalidatePath("/quotations");
     revalidatePath("/dashboard");

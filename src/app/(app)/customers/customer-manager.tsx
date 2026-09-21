@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Pencil, Plus, Search, Trash2, UserPlus } from "lucide-react";
+import { Archive, Pencil, Plus, Search, UserPlus } from "lucide-react";
 import { ConfirmButton } from "@/components/confirm-button";
 import { saveCustomer, deleteCustomer } from "./actions";
 import { Sheet } from "@/components/sheet";
@@ -149,12 +149,12 @@ export function CustomerManager({ customers }: { customers: Cust[] }) {
                     </button>
                     <ConfirmButton
                       compact
-                      icon={<Trash2 className="h-4 w-4" />}
+                      icon={<Archive className="h-4 w-4" />}
                       label=""
-                      triggerTitle="Delete customer"
-                      question="Delete this customer?"
-                      confirmLabel="Delete customer"
-                      busyLabel="Deleting…"
+                      triggerTitle="Archive customer"
+                      question="Archive this customer?"
+                      confirmLabel="Archive customer"
+                      busyLabel="Archiving…"
                       onConfirm={async () => {
                         await deleteCustomer(c.id);
                         router.refresh();

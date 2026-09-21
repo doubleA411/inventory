@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   invoices,
@@ -155,7 +155,13 @@ export async function saveInvoiceCore(
             approvedAt: null,
             approvedBy: null,
           })
-          .where(and(eq(invoices.id, invoiceId), eq(invoices.organizationId, org.id)));
+          .where(
+            and(
+              eq(invoices.id, invoiceId),
+              eq(invoices.organizationId, org.id),
+              isNull(invoices.deletedAt),
+            ),
+          );
         await tx.delete(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
       } else {
         const fy = financialYear();
@@ -235,7 +241,9 @@ export async function setInvoiceStatusCore(
     const [inv] = await db
       .select({ approvedAt: invoices.approvedAt })
       .from(invoices)
-      .where(and(eq(invoices.id, id), eq(invoices.organizationId, orgId)))
+      .where(
+        and(eq(invoices.id, id), eq(invoices.organizationId, orgId), isNull(invoices.deletedAt)),
+      )
       .limit(1);
     if (!inv?.approvedAt) {
       return { ok: false, error: "This invoice needs owner approval before it can be sent." };
@@ -267,7 +275,7 @@ export async function revokeInvoiceApprovalCore(orgId: string, id: string): Prom
 }
 
 /**
- * Delete an invoice, unless money has been recorded against it.
+ * Archive an invoice, unless money has been recorded against it.
  *
  * payments.invoiceId is ON DELETE CASCADE, so deleting a paid invoice takes
  * its payment rows with it — the collected money disappears from the books
@@ -279,6 +287,7 @@ export async function revokeInvoiceApprovalCore(orgId: string, id: string): Prom
 export async function deleteInvoiceCore(
   orgId: string,
   id: string,
+  userId?: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const [inv] = await db
     .select({ number: invoices.number, amountPaid: invoices.amountPaid })
@@ -295,12 +304,13 @@ export async function deleteInvoiceCore(
   if (count > 0 || Number(inv.amountPaid) > 0) {
     return {
       ok: false,
-      error: `${inv.number} has payments recorded against it, so deleting it would wipe that money from your books. Cancel it instead — that keeps the record and takes it out of your totals.`,
+      error: `${inv.number} has payments recorded against it, so it can't be archived. Cancel it instead — that keeps the record and takes it out of your totals.`,
     };
   }
 
   await db
-    .delete(invoices)
+    .update(invoices)
+    .set({ deletedAt: new Date(), deletedBy: userId ?? null })
     .where(and(eq(invoices.id, id), eq(invoices.organizationId, orgId)));
   return { ok: true };
 }
@@ -334,7 +344,13 @@ export async function recordPaymentCore(
   const [inv] = await db
     .select()
     .from(invoices)
-    .where(and(eq(invoices.id, d.invoiceId), eq(invoices.organizationId, orgId)))
+    .where(
+      and(
+        eq(invoices.id, d.invoiceId),
+        eq(invoices.organizationId, orgId),
+        isNull(invoices.deletedAt),
+      ),
+    )
     .limit(1);
   if (!inv) return { ok: false, error: "Invoice not found." };
 
@@ -470,7 +486,13 @@ export async function saveQuotationCore(
     const [existing] = await db
       .select({ status: quotations.status, number: quotations.number })
       .from(quotations)
-      .where(and(eq(quotations.id, d.id), eq(quotations.organizationId, org.id)))
+      .where(
+        and(
+          eq(quotations.id, d.id),
+          eq(quotations.organizationId, org.id),
+          isNull(quotations.deletedAt),
+        ),
+      )
       .limit(1);
     if (existing?.status === "converted") {
       return {
@@ -510,7 +532,13 @@ export async function saveQuotationCore(
           .update(quotations)
           // editing an approved quotation clears approval — owner must re-approve
           .set({ ...common, approvedAt: null, approvedBy: null })
-          .where(and(eq(quotations.id, quoteId), eq(quotations.organizationId, org.id)));
+          .where(
+            and(
+              eq(quotations.id, quoteId),
+              eq(quotations.organizationId, org.id),
+              isNull(quotations.deletedAt),
+            ),
+          );
         await tx.delete(quotationItems).where(eq(quotationItems.quotationId, quoteId));
       } else {
         const fy = financialYear();
@@ -572,7 +600,7 @@ export async function setQuotationStatusCore(
 }
 
 /**
- * Delete a quotation, unless an invoice was already raised from it.
+ * Archive a quotation, unless an invoice was already raised from it.
  *
  * A converted quotation is load-bearing: the invoice's quotationId and every
  * linked expense's quotationId are ON DELETE SET NULL, so deleting it doesn't
@@ -583,22 +611,30 @@ export async function setQuotationStatusCore(
 export async function deleteQuotationCore(
   orgId: string,
   id: string,
+  userId?: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const [q] = await db
     .select({ status: quotations.status, number: quotations.number })
     .from(quotations)
-    .where(and(eq(quotations.id, id), eq(quotations.organizationId, orgId)))
+    .where(
+      and(
+        eq(quotations.id, id),
+        eq(quotations.organizationId, orgId),
+        isNull(quotations.deletedAt),
+      ),
+    )
     .limit(1);
   if (!q) return { ok: false, error: "That quotation no longer exists." };
   if (q.status === "converted") {
     return {
       ok: false,
-      error: `${q.number} has an invoice raised from it, so it can't be deleted. Cancel the invoice instead if this job isn't happening.`,
+      error: `${q.number} has an invoice raised from it, so it can't be archived. Cancel the invoice instead if this job isn't happening.`,
     };
   }
 
   await db
-    .delete(quotations)
+    .update(quotations)
+    .set({ deletedAt: new Date(), deletedBy: userId ?? null })
     .where(and(eq(quotations.id, id), eq(quotations.organizationId, orgId)));
   return { ok: true };
 }
@@ -703,7 +739,13 @@ export async function convertToInvoiceCore(
   const [q] = await db
     .select()
     .from(quotations)
-    .where(and(eq(quotations.id, id), eq(quotations.organizationId, org.id)))
+    .where(
+      and(
+        eq(quotations.id, id),
+        eq(quotations.organizationId, org.id),
+        isNull(quotations.deletedAt),
+      ),
+    )
     .limit(1);
   if (!q) return { ok: false, error: "Quotation not found." };
   if (!q.approvedAt) {

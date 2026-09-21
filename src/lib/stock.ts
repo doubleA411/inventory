@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   products,
@@ -80,6 +80,7 @@ export async function applyMovement(
           and(
             eq(products.id, input.productId),
             eq(products.organizationId, input.organizationId),
+            isNull(products.deletedAt),
           ),
         )
         .limit(1);

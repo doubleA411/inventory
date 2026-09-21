@@ -77,7 +77,7 @@ export default async function ProductDetailPage({
   const [clock] = await db.execute<{ today: string; soon: string }>(sql`
     select
       (now() at time zone ${organization.timezone})::date::text as today,
-      ((now() at time zone ${organization.timezone})::date + ${EXPIRY_SOON_DAYS})::text as soon
+      ((now() at time zone ${organization.timezone})::date + (${EXPIRY_SOON_DAYS}::integer))::text as soon
   `);
 
   return (

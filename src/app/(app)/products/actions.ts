@@ -196,9 +196,10 @@ export async function updateProductAction(
 }
 
 export async function deleteProductAction(productId: string): Promise<void> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   await db
-    .delete(products)
+    .update(products)
+    .set({ deletedAt: new Date(), deletedBy: user.id })
     .where(
       and(eq(products.id, productId), eq(products.organizationId, organization.id)),
     );
@@ -211,11 +212,12 @@ export async function deleteProductAction(productId: string): Promise<void> {
 const idsSchema = z.array(z.string().uuid()).min(1, "Select at least one product");
 
 export async function bulkDeleteProductsAction(ids: string[]): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const parsed = idsSchema.safeParse(ids);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   await db
-    .delete(products)
+    .update(products)
+    .set({ deletedAt: new Date(), deletedBy: user.id })
     .where(
       and(inArray(products.id, parsed.data), eq(products.organizationId, organization.id)),
     );

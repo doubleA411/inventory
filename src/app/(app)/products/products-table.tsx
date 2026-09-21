@@ -3,7 +3,7 @@
 import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowDownCircle, ArrowUpCircle, Trash2 } from "lucide-react";
+import { Archive, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
 import { Badge } from "@/components/ui";
 import { CostTrendBadge } from "@/components/cost-trend";
 import { ClickableRow, stopRowClick } from "@/components/clickable-row";
@@ -154,9 +154,9 @@ export function ProductsTable({
             </button>
             {confirmingDelete ? (
               <span className="flex items-center gap-2">
-                <span className="text-(--color-muted)">Delete?</span>
-                <button className="btn-danger" onClick={applyBulkDelete} disabled={pending}>
-                  Yes, delete
+                <span className="text-(--color-muted)">Archive selected?</span>
+                <button className="btn-outline" onClick={applyBulkDelete} disabled={pending}>
+                  Archive products
                 </button>
                 <button className="btn-ghost" onClick={() => setConfirmingDelete(false)}>
                   Cancel
@@ -164,7 +164,7 @@ export function ProductsTable({
               </span>
             ) : (
               <button className="btn-outline" onClick={() => setConfirmingDelete(true)} disabled={pending}>
-                <Trash2 className="h-4 w-4" /> Delete
+                <Archive className="h-4 w-4" /> Archive
               </button>
             )}
           </div>

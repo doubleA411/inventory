@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { purchaseLists, purchaseListItems, vendors, products } from "@/lib/db/schema";
 import { getVendor } from "@/lib/purchase-queries";
@@ -19,6 +19,7 @@ export async function listPreferredProductsForVendor(orgId: string, vendorId: st
         eq(products.organizationId, orgId),
         eq(products.preferredVendorId, vendorId),
         eq(products.isActive, true),
+        isNull(products.deletedAt),
       ),
     )
     .orderBy(asc(products.name));
@@ -28,7 +29,13 @@ export async function listPurchaseListsForVendor(orgId: string, vendorId: string
   return db
     .select()
     .from(purchaseLists)
-    .where(and(eq(purchaseLists.vendorId, vendorId), eq(purchaseLists.organizationId, orgId)))
+    .where(
+      and(
+        eq(purchaseLists.vendorId, vendorId),
+        eq(purchaseLists.organizationId, orgId),
+        isNull(purchaseLists.deletedAt),
+      ),
+    )
     .orderBy(desc(purchaseLists.createdAt));
 }
 
@@ -45,7 +52,7 @@ export async function listAllPurchaseLists(orgId: string) {
     })
     .from(purchaseLists)
     .leftJoin(vendors, eq(purchaseLists.vendorId, vendors.id))
-    .where(eq(purchaseLists.organizationId, orgId))
+    .where(and(eq(purchaseLists.organizationId, orgId), isNull(purchaseLists.deletedAt)))
     .orderBy(desc(purchaseLists.createdAt));
 }
 
@@ -53,7 +60,13 @@ export async function getPurchaseListFull(orgId: string, id: string) {
   const [list] = await db
     .select()
     .from(purchaseLists)
-    .where(and(eq(purchaseLists.id, id), eq(purchaseLists.organizationId, orgId)))
+    .where(
+      and(
+        eq(purchaseLists.id, id),
+        eq(purchaseLists.organizationId, orgId),
+        isNull(purchaseLists.deletedAt),
+      ),
+    )
     .limit(1);
   if (!list) return null;
   const items = await db
@@ -61,6 +74,6 @@ export async function getPurchaseListFull(orgId: string, id: string) {
     .from(purchaseListItems)
     .where(eq(purchaseListItems.purchaseListId, id))
     .orderBy(asc(purchaseListItems.position));
-  const vendor = list.vendorId ? await getVendor(orgId, list.vendorId) : null;
+  const vendor = list.vendorId ? await getVendor(orgId, list.vendorId, true) : null;
   return { list, items, vendor };
 }

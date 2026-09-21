@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, Trash2 } from "lucide-react";
+import { Archive, Ban } from "lucide-react";
 import { ConfirmButton } from "@/components/confirm-button";
 import { cancelPurchaseBill, deletePurchaseBill } from "../actions";
 
@@ -34,12 +34,12 @@ export function PurchaseBillActions({
         />
       )}
       <ConfirmButton
-        icon={<Trash2 className="h-4 w-4" />}
-        label="Delete"
-        question="Delete this purchase bill?"
-        detail="It disappears for good. Stock you already received stays in inventory."
-        confirmLabel="Delete bill"
-        busyLabel="Deleting…"
+        icon={<Archive className="h-4 w-4" />}
+        label="Archive"
+        question="Archive this purchase bill?"
+        detail="It leaves active purchasing views. Its lines, payments, and received stock stay recoverable."
+        confirmLabel="Archive bill"
+        busyLabel="Archiving…"
         disabled={pending}
         onConfirm={async () => {
           await deletePurchaseBill(id, vendorId);

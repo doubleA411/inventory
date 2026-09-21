@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Check, X, Trash2, ShieldCheck, RotateCcw } from "lucide-react";
+import { Archive, FileText, Check, X, ShieldCheck, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui";
 import {
   setQuotationStatus,
@@ -118,17 +118,17 @@ export function QuoteActions({
             setConfirmDelete(true);
           }}
         >
-          <Trash2 className="h-4 w-4" /> Delete
+          <Archive className="h-4 w-4" /> Archive
         </button>
         {error && <span className="text-sm text-(--color-danger)">{error}</span>}
       </div>
 
       {confirmDelete && (
         <div className="space-y-2 rounded-lg border border-(--color-border) bg-(--color-bg) p-3">
-          <div className="text-sm font-medium">Delete this quotation?</div>
+          <div className="text-sm font-medium">Archive this quotation?</div>
           <p className="text-xs text-(--color-muted)">
-            It disappears for good, along with its menu and booking details. Any expenses you
-            logged against this event stay, but stop being counted towards it.
+            It leaves active lists but keeps its menu, booking details, and linked expenses.
+            You can restore it from Settings.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -146,7 +146,7 @@ export function QuoteActions({
                 })
               }
             >
-              {pending ? "Deleting…" : "Delete quotation"}
+              {pending ? "Archiving…" : "Archive quotation"}
             </button>
             <button
               className="btn-ghost"

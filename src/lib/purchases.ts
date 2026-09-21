@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   purchaseBills,
@@ -178,9 +178,14 @@ export async function cancelPurchaseBillCore(orgId: string, id: string): Promise
     .where(and(eq(purchaseBills.id, id), eq(purchaseBills.organizationId, orgId)));
 }
 
-export async function deletePurchaseBillCore(orgId: string, id: string): Promise<void> {
+export async function deletePurchaseBillCore(
+  orgId: string,
+  id: string,
+  userId?: string,
+): Promise<void> {
   await db
-    .delete(purchaseBills)
+    .update(purchaseBills)
+    .set({ deletedAt: new Date(), deletedBy: userId ?? null })
     .where(and(eq(purchaseBills.id, id), eq(purchaseBills.organizationId, orgId)));
 }
 
@@ -218,7 +223,13 @@ export async function removePurchaseBillItemCore(
       const [bill] = await tx
         .select()
         .from(purchaseBills)
-        .where(and(eq(purchaseBills.id, billId), eq(purchaseBills.organizationId, orgId)))
+        .where(
+          and(
+            eq(purchaseBills.id, billId),
+            eq(purchaseBills.organizationId, orgId),
+            isNull(purchaseBills.deletedAt),
+          ),
+        )
         .limit(1);
       if (!bill) return { ok: false as const, error: "Purchase bill not found." };
 
@@ -441,6 +452,7 @@ export async function recordVendorPaymentCore(
           eq(purchaseBills.organizationId, orgId),
           eq(purchaseBills.vendorId, d.vendorId),
           eq(purchaseBills.status, "active"),
+          isNull(purchaseBills.deletedAt),
         ),
       )
       .orderBy(asc(purchaseBills.billDate), asc(purchaseBills.createdAt));
@@ -483,7 +495,13 @@ export async function recordVendorPaymentCore(
       const [vendor] = await tx
         .select({ openingBalance: vendors.openingBalance })
         .from(vendors)
-        .where(and(eq(vendors.id, d.vendorId), eq(vendors.organizationId, orgId)))
+        .where(
+          and(
+            eq(vendors.id, d.vendorId),
+            eq(vendors.organizationId, orgId),
+            isNull(vendors.deletedAt),
+          ),
+        )
         .limit(1);
       const [paidSoFar] = await tx
         .select({ total: sql<string>`coalesce(sum(${purchaseBillPayments.amount}), 0)` })
@@ -591,6 +609,7 @@ export async function applyVendorCreditCore(
             eq(purchaseBills.organizationId, orgId),
             eq(purchaseBills.vendorId, vendorId),
             eq(purchaseBills.status, "active"),
+            isNull(purchaseBills.deletedAt),
           ),
         )
         .orderBy(asc(purchaseBills.billDate), asc(purchaseBills.createdAt));
@@ -796,6 +815,7 @@ export async function createPurchaseBillForRestockCore(
             eq(purchaseBills.vendorId, input.vendorId),
             eq(purchaseBills.billDate, billDate),
             eq(purchaseBills.status, "active"),
+            isNull(purchaseBills.deletedAt),
           ),
         )
         .orderBy(desc(purchaseBills.createdAt))
@@ -934,7 +954,7 @@ export async function restockWithVendor(
   const [product] = await db
     .select({ name: products.name })
     .from(products)
-    .where(eq(products.id, input.productId))
+    .where(and(eq(products.id, input.productId), isNull(products.deletedAt)))
     .limit(1);
   const [unit] = await db
     .select({ symbol: units.symbol })

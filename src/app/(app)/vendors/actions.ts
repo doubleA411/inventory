@@ -98,9 +98,10 @@ export async function saveVendor(
 }
 
 export async function deleteVendor(id: string): Promise<VendorState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   await db
-    .delete(vendors)
+    .update(vendors)
+    .set({ deletedAt: new Date(), deletedBy: user.id })
     .where(and(eq(vendors.id, id), eq(vendors.organizationId, organization.id)));
   revalidatePath("/vendors");
   return { ok: true };

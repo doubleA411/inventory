@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Send, Copy, Trash2 } from "lucide-react";
+import { Archive, Send, Copy } from "lucide-react";
 import { ConfirmButton } from "@/components/confirm-button";
 import { markPurchaseListSent, duplicatePurchaseList, deletePurchaseList } from "../actions";
 
@@ -42,12 +42,12 @@ export function PurchaseListActions({
         <Copy className="h-4 w-4" /> Duplicate
       </button>
       <ConfirmButton
-        icon={<Trash2 className="h-4 w-4" />}
-        label="Delete"
-        question="Delete this purchase list?"
-        detail="It disappears for good."
-        confirmLabel="Delete list"
-        busyLabel="Deleting…"
+        icon={<Archive className="h-4 w-4" />}
+        label="Archive"
+        question="Archive this purchase list?"
+        detail="It leaves active lists and stays recoverable in Settings."
+        confirmLabel="Archive list"
+        busyLabel="Archiving…"
         disabled={pending}
         onConfirm={async () => {
           await deletePurchaseList(id, vendorId);

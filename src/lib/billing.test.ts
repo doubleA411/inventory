@@ -27,7 +27,11 @@ import {
   markQuotationTakenCore,
   unmarkQuotationTakenCore,
 } from "@/lib/billing";
-import { listUpcomingEvents } from "@/lib/billing-queries";
+import {
+  getInvoiceFull,
+  getQuotationFull,
+  listUpcomingEvents,
+} from "@/lib/billing-queries";
 import { eventExpenseTotal } from "@/lib/expenses";
 
 const run = Date.now();
@@ -386,7 +390,7 @@ describe("billing (quotations, invoices, approvals, payments)", () => {
       expect(stillThere).toBeTruthy();
     });
 
-    it("deletes an invoice that never took any money", async () => {
+    it("archives an invoice that never took any money", async () => {
       const created = await saveInvoiceCore(gstOrg, userId, {
         customerId: null,
         issueDate: "2026-07-24",
@@ -397,8 +401,9 @@ describe("billing (quotations, invoices, approvals, payments)", () => {
 
       const del = await deleteInvoiceCore(gstOrg.id, created.id);
       expect(del.ok).toBe(true);
-      const rows = await db.select().from(invoices).where(eq(invoices.id, created.id));
-      expect(rows).toHaveLength(0);
+      const [archived] = await db.select().from(invoices).where(eq(invoices.id, created.id));
+      expect(archived.deletedAt).toBeInstanceOf(Date);
+      expect(await getInvoiceFull(gstOrg.id, created.id)).toBeNull();
     });
 
     it("refuses a payment above the balance due unless explicitly allowed", async () => {
@@ -515,7 +520,7 @@ describe("billing (quotations, invoices, approvals, payments)", () => {
       // profitability figures rather than failing.
       const del = await deleteQuotationCore(gstOrg.id, q.id);
       expect(del.ok).toBe(false);
-      if (!del.ok) expect(del.error).toMatch(/can't be deleted/i);
+      if (!del.ok) expect(del.error).toMatch(/can't be archived/i);
       const [stillThere] = await db.select().from(quotations).where(eq(quotations.id, q.id));
       expect(stillThere).toBeTruthy();
     });
@@ -580,7 +585,7 @@ describe("billing (quotations, invoices, approvals, payments)", () => {
       await db.delete(products).where(eq(products.id, product.id));
     });
 
-    it("deletes a quotation that never became an invoice", async () => {
+    it("archives a quotation that never became an invoice", async () => {
       const q = await saveQuotationCore(gstOrg, userId, {
         customerId: sameStateCustomerId,
         issueDate: "2026-07-24",
@@ -591,8 +596,9 @@ describe("billing (quotations, invoices, approvals, payments)", () => {
 
       const del = await deleteQuotationCore(gstOrg.id, q.id);
       expect(del.ok).toBe(true);
-      const rows = await db.select().from(quotations).where(eq(quotations.id, q.id));
-      expect(rows).toHaveLength(0);
+      const [archived] = await db.select().from(quotations).where(eq(quotations.id, q.id));
+      expect(archived.deletedAt).toBeInstanceOf(Date);
+      expect(await getQuotationFull(gstOrg.id, q.id)).toBeNull();
     });
   });
 
