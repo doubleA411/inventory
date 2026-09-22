@@ -107,7 +107,10 @@ function isImage(url: string | null): boolean {
 // A menu uses larger text and may be printed over a letterhead footer, so
 // leave a generous reserve rather than relying on the browser to paginate an
 // overflowing A4 element (which would create an unletterheaded continuation).
-const MENU_LINES_PER_PAGE = 24;
+// 28 accommodates a complete 20-item session plus a short follow-up session
+// in the usable blank area above the letterhead footer. The page itself is
+// still hard-bounded to A4, so this does not reintroduce unletterheaded spill.
+const MENU_LINES_PER_PAGE = 28;
 
 type MenuPageItem = DocItem & { menuItemStart: number; showRate: boolean };
 
