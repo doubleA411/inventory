@@ -535,7 +535,7 @@ export function DocumentView({
                       {it.unit ? ` · ${Number(it.quantity)} ${it.unit}` : ""}
                     </div>
                     <ol
-                      className="list-decimal space-y-0.5 pl-5 doc-text-xs"
+                      className="list-decimal space-y-0.5 pl-5 doc-text-xs font-medium"
                       start={it.menuItemStart}
                       style={menuItemStyle}
                     >
