@@ -104,27 +104,59 @@ function isImage(url: string | null): boolean {
 // fills with as many sessions as fit before the next one moves to a fresh
 // page — instead of exactly one session per page, or letting long content
 // silently overflow one page's boundary.
-const MENU_LINES_PER_PAGE = 34;
+// A menu uses larger text and may be printed over a letterhead footer, so
+// leave a generous reserve rather than relying on the browser to paginate an
+// overflowing A4 element (which would create an unletterheaded continuation).
+const MENU_LINES_PER_PAGE = 24;
 
-function chunkMenuLines(items: DocItem[]): DocItem[][] {
-  const pages: DocItem[][] = [];
-  let current: DocItem[] = [];
+type MenuPageItem = DocItem & { menuItemStart: number; showRate: boolean };
+
+function chunkMenuLines(items: DocItem[], showRates: boolean): MenuPageItem[][] {
+  const pages: MenuPageItem[][] = [];
+  let current: MenuPageItem[] = [];
   let currentLines = 0;
   let prevDate: string | null = null;
+
+  function finishPage() {
+    if (current.length > 0) pages.push(current);
+    current = [];
+    currentLines = 0;
+    prevDate = null;
+  }
+
   for (const it of items) {
     const date = it.eventDate ?? null;
-    const linesNeeded = (date && date !== prevDate ? 1 : 0) + 1 + (it.menuItems?.length ?? 0);
-    if (current.length > 0 && currentLines + linesNeeded > MENU_LINES_PER_PAGE) {
-      pages.push(current);
-      current = [];
-      currentLines = 0;
-      prevDate = null;
+    const menuItems = it.menuItems ?? [];
+    let itemOffset = 0;
+
+    // A particularly long menu session is split across complete menu pages.
+    // Repeating its heading is preferable to letting an item list spill onto a
+    // browser-created page, which has neither the letterhead nor A4 layout.
+    while (itemOffset < menuItems.length) {
+      const dateLine = date && date !== prevDate ? 1 : 0;
+      const fixedLines = dateLine + 1 + (showRates ? 2 : 0);
+      if (current.length > 0 && currentLines + fixedLines + 1 > MENU_LINES_PER_PAGE) {
+        finishPage();
+        continue;
+      }
+
+      const availableItemLines = MENU_LINES_PER_PAGE - currentLines - fixedLines;
+      const take = Math.max(1, Math.min(menuItems.length - itemOffset, availableItemLines));
+      const nextOffset = itemOffset + take;
+      current.push({
+        ...it,
+        menuItems: menuItems.slice(itemOffset, nextOffset),
+        menuItemStart: itemOffset + 1,
+        showRate: nextOffset === menuItems.length,
+      });
+      currentLines += fixedLines + take;
+      prevDate = date;
+      itemOffset = nextOffset;
+
+      if (itemOffset < menuItems.length) finishPage();
     }
-    current.push(it);
-    currentLines += linesNeeded;
-    prevDate = date;
   }
-  if (current.length > 0) pages.push(current);
+  finishPage();
   return pages;
 }
 
@@ -314,7 +346,7 @@ export function DocumentView({
     doc.menuOnly || doc.showMenuList !== false
       ? doc.items.filter((it) => it.menuItems?.length)
       : [];
-  const menuPages = chunkMenuLines(menuLines);
+  const menuPages = chunkMenuLines(menuLines, !doc.menuOnly);
   const pricedPages = doc.menuOnly
     ? []
     : layoutPricedPages(
@@ -323,8 +355,16 @@ export function DocumentView({
         doc.kind === "invoice" && !!doc.payments?.length,
       );
   const contentStyle = { "--doc-base": `${org.fontSize}px` } as React.CSSProperties;
-  const headingStyle = { color: org.headingColor };
-  const bodyStyle = { color: org.bodyColor };
+  // Quotation and invoice copy stays black. The menu palette is intentionally
+  // separate below, so menu-specific colors can never leak into priced pages.
+  const headingStyle = { color: "#000000" };
+  const bodyStyle = { color: "#000000" };
+  const documentAlertStyle = { color: "#FF0000" };
+  const documentAlertTextStyle = { ...documentAlertStyle, fontSize: "0.9em" };
+  // The catering menu has its own fixed palette, independent of the
+  // organization-wide colors used by the priced quotation and invoice pages.
+  const menuHeadingStyle = { color: "#BD35D6" };
+  const menuItemStyle = { color: "#0000F5" };
 
   // On a real uploaded letterhead, the logo sits in its own band at the top
   // with blank space beside it (not below it) — the customer/venue block
@@ -332,18 +372,18 @@ export function DocumentView({
   // letterheadMarginTop along with the rest of the content (which does need
   // to clear the full header). Falls back to normal flow under DocHeader
   // when there's no letterhead image to sit beside.
-  const customerBlockContent = customer ? (
+  const menuCustomerBlockContent = customer ? (
     <>
-      <div className="font-semibold" style={headingStyle}>
+      <div className="font-semibold" style={menuHeadingStyle}>
         {customer.name}
       </div>
       {(customer.location || customer.district) && (
-        <div className="doc-text-xs" style={bodyStyle}>
+        <div className="doc-text-xs" style={menuHeadingStyle}>
           {[customer.location, customer.district].filter(Boolean).join(", ")}
         </div>
       )}
       {doc.venue && (
-        <div className="doc-text-xs" style={bodyStyle}>Venue: {doc.venue}</div>
+        <div className="doc-text-xs" style={menuHeadingStyle}>Venue: {doc.venue}</div>
       )}
     </>
   ) : null;
@@ -427,7 +467,7 @@ export function DocumentView({
             // eslint-disable-next-line @next/next/no-img-element
             <img className="lh-img" src={org.letterheadUrl} alt="" />
           )}
-          {useLetterheadBg && customerBlockContent && (
+          {useLetterheadBg && menuCustomerBlockContent && (
             <div
               className="doc-text-sm"
               style={{
@@ -439,20 +479,20 @@ export function DocumentView({
                 zIndex: 1,
               }}
             >
-              {customerBlockContent}
+              {menuCustomerBlockContent}
             </div>
           )}
           <div className="a4-content" style={contentStyle}>
             {showGeneratedHeader && <DocHeader org={org} />}
-            {!useLetterheadBg && customerBlockContent && (
-              <div className="mb-4 doc-text-sm">{customerBlockContent}</div>
+            {!useLetterheadBg && menuCustomerBlockContent && (
+              <div className="mb-4 doc-text-sm">{menuCustomerBlockContent}</div>
             )}
             <div className="relative mb-4 flex items-end justify-between">
-              <h1 className="doc-text-xl font-bold tracking-wide" style={headingStyle}>
+              <h1 className="doc-text-xl font-bold tracking-wide" style={menuHeadingStyle}>
                 Menu
               </h1>
               {!useLetterheadBg && pageItems[0]?.eventDate && (
-                <div className="doc-text-sm font-semibold" style={bodyStyle}>
+                <div className="doc-text-sm font-semibold" style={menuItemStyle}>
                   {fmtDate(pageItems[0].eventDate)}
                 </div>
               )}
@@ -463,7 +503,7 @@ export function DocumentView({
                 // doesn't run into the logo above.
                 <div
                   className="absolute bottom-0 whitespace-nowrap doc-text-sm font-semibold"
-                  style={{ ...bodyStyle, left: "158.8mm", transform: "translateX(-50%)" }}
+                  style={{ ...menuItemStyle, left: "158.8mm", transform: "translateX(-50%)" }}
                 >
                   {fmtDate(pageItems[0].eventDate)}
                 </div>
@@ -481,28 +521,29 @@ export function DocumentView({
                   {showDateHeading && (
                     <div
                       className="mb-2 mt-4 border-t border-gray-300 pt-2 text-right doc-text-sm font-semibold"
-                      style={bodyStyle}
+                      style={menuItemStyle}
                     >
                       {fmtDate(date)}
                     </div>
                   )}
                   <div className="mb-4">
-                    <div className="mb-1 doc-text-sm font-semibold">
+                    <div className="mb-1 doc-text-sm font-semibold" style={menuHeadingStyle}>
                       {it.description}
                       {it.unit ? ` · ${Number(it.quantity)} ${it.unit}` : ""}
                     </div>
                     <ol
                       className="list-decimal space-y-0.5 pl-5 doc-text-xs"
-                      style={bodyStyle}
+                      start={it.menuItemStart}
+                      style={menuItemStyle}
                     >
                       {it.menuItems!.map((m, j) => (
                         <li key={j}>{m}</li>
                       ))}
                     </ol>
-                    {!doc.menuOnly && (
+                    {!doc.menuOnly && it.showRate && (
                       <div
                         className="mt-1 border-t border-dotted border-gray-300 pt-1 pl-3 text-left doc-text-xs font-semibold"
-                        style={headingStyle}
+                        style={menuHeadingStyle}
                       >
                         {fmtMoney(it.rate, cur)}
                         {it.unit ? ` / ${it.unit}` : ""}
@@ -704,7 +745,7 @@ export function DocumentView({
         <span className="font-medium">{amountInWords(Number(doc.total))}</span>
       </div>
 
-      {/* Footer: bank, notes/terms, signature */}
+      {/* Footer: bank/signature, then the full-width terms and notes. */}
       <div className="mt-6 grid grid-cols-2 gap-6 doc-text-xs doc-noSplit">
         <div className="space-y-2">
           {doc.kind === "invoice" && (org.bankName || org.bankUpi) && (
@@ -719,21 +760,6 @@ export function DocumentView({
               {org.bankUpi && <div>UPI: {org.bankUpi}</div>}
             </div>
           )}
-          {doc.terms && (
-            <div>
-              <div className="font-semibold uppercase" style={bodyStyle}>
-                Terms
-              </div>
-              <div className="whitespace-pre-line" style={bodyStyle}>
-                {doc.terms}
-              </div>
-            </div>
-          )}
-          {doc.notes && (
-            <div className="whitespace-pre-line" style={bodyStyle}>
-              {doc.notes}
-            </div>
-          )}
         </div>
         <div className="flex flex-col items-end justify-end text-right">
           <div className="mb-1" style={bodyStyle}>For {org.legalName || org.name}</div>
@@ -744,6 +770,17 @@ export function DocumentView({
           <div className="mt-6 border-t border-gray-400 pt-1">Authorised Signatory</div>
         </div>
       </div>
+      {(doc.terms || doc.notes) && (
+        <div className="mt-3 space-y-2 doc-text-xs doc-noSplit" style={documentAlertTextStyle}>
+          {doc.terms && (
+            <div>
+              <div className="font-bold uppercase">Terms</div>
+              <div className="whitespace-pre-line font-bold">{doc.terms}</div>
+            </div>
+          )}
+          {doc.notes && <div className="whitespace-pre-line font-bold">{doc.notes}</div>}
+        </div>
+      )}
       </>
       )}
       </div>

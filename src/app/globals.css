@@ -315,7 +315,9 @@ body {
 /* Menu page precedes the priced document — gap on screen, hard page break
    when printed. */
 .menu-page {
+  height: 297mm;
   margin-bottom: 24px;
+  overflow: hidden;
 }
 
 /* Screen wrapper around the page (gray backdrop). Collapses in print. */
