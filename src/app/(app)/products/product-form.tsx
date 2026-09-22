@@ -44,6 +44,7 @@ export function ProductForm({
   const [catBusy, setCatBusy] = useState(false);
   const [catError, setCatError] = useState<string | null>(null);
   const [vendorId, setVendorId] = useState(defaults?.preferredVendorId ?? "");
+  const [stockUnitId, setStockUnitId] = useState(defaults?.stockUnitId ?? "");
 
   async function addCategory() {
     if (!newCat.trim()) return;
@@ -64,9 +65,27 @@ export function ProductForm({
     (acc[u.groupName] ??= []).push(u);
     return acc;
   }, {});
+  const originalStockUnit = units.find((unit) => unit.id === defaults?.stockUnitId);
+  const selectedStockUnit = units.find((unit) => unit.id === stockUnitId);
+  const changingStockUnit = !!originalStockUnit && stockUnitId !== originalStockUnit.id;
+  const canConvertStockUnit =
+    !changingStockUnit || originalStockUnit?.groupName === selectedStockUnit?.groupName;
+
+  function confirmUnitConversion(event: React.FormEvent<HTMLFormElement>) {
+    if (!changingStockUnit) return;
+    if (!canConvertStockUnit) {
+      event.preventDefault();
+      return;
+    }
+    const confirmed = window.confirm(
+      `Convert this product from ${originalStockUnit?.symbol} to ${selectedStockUnit?.symbol}? ` +
+        "Stock, reorder level, batch quantities, and per-unit costs will be converted.",
+    );
+    if (!confirmed) event.preventDefault();
+  }
 
   return (
-    <form action={formAction} className="card max-w-2xl space-y-5 p-6">
+    <form action={formAction} onSubmit={confirmUnitConversion} className="card max-w-2xl space-y-5 p-6">
       <div className="grid gap-5 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <label className="label" htmlFor="name">
@@ -103,7 +122,8 @@ export function ProductForm({
             id="stockUnitId"
             name="stockUnitId"
             required
-            defaultValue={defaults?.stockUnitId ?? ""}
+            value={stockUnitId}
+            onChange={(event) => setStockUnitId(event.target.value)}
             className="input"
           >
             <option value="" disabled>
@@ -119,6 +139,17 @@ export function ProductForm({
               </optgroup>
             ))}
           </select>
+          {changingStockUnit && !canConvertStockUnit && (
+            <p className="mt-1 text-xs text-(--color-danger)">
+              {originalStockUnit?.name} and {selectedStockUnit?.name} are different unit types and
+              cannot be converted automatically. Choose a unit from the {originalStockUnit?.groupName} group.
+            </p>
+          )}
+          {changingStockUnit && canConvertStockUnit && (
+            <p className="mt-1 text-xs text-(--color-muted)">
+              Saving will convert existing stock, reorder level, batch quantities, and per-unit costs.
+            </p>
+          )}
         </div>
 
         <div>

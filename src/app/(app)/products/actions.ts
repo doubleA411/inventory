@@ -186,7 +186,7 @@ export async function updateProductAction(
     productId,
     parsed.data.stockUnitId,
     parsed.data.preferredVendorId,
-    parsed.data.costPrice,
+    result.costPrice,
     formData,
   );
   if (restock?.error) return { error: restock.error };

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { organizations, units, products } from "@/lib/db/schema";
-import { convertQuantity } from "@/lib/units";
+import { convertQuantity, convertUnitCost } from "@/lib/units";
 import { applyMovement } from "@/lib/stock";
 
 // --- pure conversion tests (no DB) -----------------------------------------
@@ -20,6 +20,10 @@ describe("convertQuantity", () => {
   });
   it("converts dozen -> pieces", () => {
     expect(convertQuantity(3, dozen, pc)).toBe(36);
+  });
+  it("converts a unit cost inversely", () => {
+    expect(convertUnitCost(10, g, kg)).toBe(10_000);
+    expect(convertUnitCost(10_000, kg, g)).toBe(10);
   });
   it("throws across unit groups", () => {
     expect(() => convertQuantity(1, kg, pc)).toThrow(/different unit types/i);

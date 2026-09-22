@@ -32,6 +32,28 @@ export function roundQty(n: number): number {
   return Math.round((n + Number.EPSILON) * 1e6) / 1e6;
 }
 
+/**
+ * Convert a price expressed per `from` unit into a price per `to` unit.
+ * For example, ₹10/g becomes ₹10,000/kg.
+ */
+export function convertUnitCost(
+  cost: number,
+  from: Pick<Unit, "groupId" | "factorToBase" | "symbol">,
+  to: Pick<Unit, "groupId" | "factorToBase" | "symbol">,
+): number {
+  if (from.groupId !== to.groupId) {
+    throw new Error(
+      `Cannot convert between ${from.symbol} and ${to.symbol}: different unit types.`,
+    );
+  }
+  const fromFactor = Number(from.factorToBase);
+  const toFactor = Number(to.factorToBase);
+  if (!(fromFactor > 0) || !(toFactor > 0)) {
+    throw new Error("Cannot convert a cost using an invalid unit factor.");
+  }
+  return cost * toFactor / fromFactor;
+}
+
 /** Catering-oriented default unit library, seeded per organization. */
 export const CATERING_UNIT_PRESET: {
   group: string;
