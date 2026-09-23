@@ -7,6 +7,8 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, categories, stockBatches, stockMovements } from "@/lib/db/schema";
 import { requireAuth, requireRole } from "@/lib/auth";
+import { recordAudit } from "@/lib/audit";
+import { fmtMoney } from "@/lib/utils";
 import { applyMovement } from "@/lib/stock";
 import { productSchema, createProduct, updateProduct } from "@/lib/products";
 import { restockWithVendor } from "@/lib/purchases";
@@ -142,6 +144,14 @@ export async function createProductQuick(
   }
   const result = await createProduct(organization.id, parsed.data);
   if (!result.ok) return result;
+  await recordAudit({
+    orgId: organization.id,
+    action: "product.created",
+    entityType: "product",
+    entityId: result.id,
+    summary: `Created product ${parsed.data.name}`,
+    actorUserId: user.id,
+  });
 
   // Reported separately rather than failing the whole call: the product itself
   // saved fine, and telling someone "could not create product" when it exists
@@ -180,6 +190,15 @@ export async function updateProductAction(
   }
   const result = await updateProduct(organization.id, productId, parsed.data);
   if (!result.ok) return { error: result.error };
+  await recordAudit({
+    orgId: organization.id,
+    action: "product.updated",
+    entityType: "product",
+    entityId: productId,
+    summary: `Updated product ${parsed.data.name}`,
+    details: { costPrice: result.costPrice ?? null, reorderLevel: parsed.data.reorderLevel },
+    actorUserId: user.id,
+  });
   const restock = await maybeRestockFromProductForm(
     organization,
     user.id,
@@ -203,11 +222,41 @@ export async function deleteProductAction(productId: string): Promise<void> {
     .where(
       and(eq(products.id, productId), eq(products.organizationId, organization.id)),
     );
+  await recordAudit({
+    orgId: organization.id,
+    action: "product.archived",
+    entityType: "product",
+    entityId: productId,
+    summary: "Archived product",
+    actorUserId: user.id,
+  });
   revalidatePath("/products");
   redirect("/products");
 }
 
 // --- Bulk actions ------------------------------------------------------
+
+/** One event per product, so each product's history stays complete. */
+async function bulkProductAudit(
+  orgId: string,
+  userId: string,
+  ids: string[],
+  action: string,
+  summary: string,
+  details?: Record<string, unknown>,
+) {
+  for (const id of ids) {
+    await recordAudit({
+      orgId,
+      action,
+      entityType: "product",
+      entityId: id,
+      summary,
+      details: { ...details, bulkCount: ids.length },
+      actorUserId: userId,
+    });
+  }
+}
 
 const idsSchema = z.array(z.string().uuid()).min(1, "Select at least one product");
 
@@ -221,6 +270,7 @@ export async function bulkDeleteProductsAction(ids: string[]): Promise<ActionSta
     .where(
       and(inArray(products.id, parsed.data), eq(products.organizationId, organization.id)),
     );
+  await bulkProductAudit(organization.id, user.id, parsed.data, "product.archived", "Archived product (bulk)");
   revalidatePath("/products");
   return { ok: true };
 }
@@ -229,7 +279,7 @@ export async function bulkSetCategoryAction(
   ids: string[],
   categoryId: string | null,
 ): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const parsed = idsSchema.safeParse(ids);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   await db
@@ -238,6 +288,7 @@ export async function bulkSetCategoryAction(
     .where(
       and(inArray(products.id, parsed.data), eq(products.organizationId, organization.id)),
     );
+  await bulkProductAudit(organization.id, user.id, parsed.data, "product.category_changed", "Changed category (bulk)", { categoryId });
   revalidatePath("/products");
   return { ok: true };
 }
@@ -246,7 +297,7 @@ export async function bulkSetActiveAction(
   ids: string[],
   isActive: boolean,
 ): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const parsed = idsSchema.safeParse(ids);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   await db
@@ -255,12 +306,19 @@ export async function bulkSetActiveAction(
     .where(
       and(inArray(products.id, parsed.data), eq(products.organizationId, organization.id)),
     );
+  await bulkProductAudit(
+    organization.id,
+    user.id,
+    parsed.data,
+    isActive ? "product.activated" : "product.deactivated",
+    isActive ? "Marked active (bulk)" : "Marked inactive (bulk)",
+  );
   revalidatePath("/products");
   return { ok: true };
 }
 
 export async function createCategoryAction(name: string): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const clean = name.trim();
   if (!clean) return { error: "Category name required" };
   try {
@@ -270,6 +328,14 @@ export async function createCategoryAction(name: string): Promise<ActionState> {
   } catch {
     return { error: "Category already exists" };
   }
+  await recordAudit({
+    orgId: organization.id,
+    action: "category.created",
+    entityType: "category",
+    entityLabel: clean,
+    summary: `Created product category ${clean}`,
+    actorUserId: user.id,
+  });
   revalidatePath("/products");
   return { ok: true };
 }
@@ -392,7 +458,7 @@ export async function setBatchCostAction(
   batchId: string,
   unitCost: number,
 ): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const parsed = batchCostSchema.safeParse({ batchId, unitCost });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -454,6 +520,15 @@ export async function setBatchCostAction(
       .where(eq(products.id, batch.productId));
   }
 
+  await recordAudit({
+    orgId: organization.id,
+    action: "stock.batch_cost_set",
+    entityType: "product",
+    entityId: batch.productId,
+    summary: `Set batch cost to ${fmtMoney(cost)} per unit`,
+    details: { batchId: batch.id, unitCost: cost },
+    actorUserId: user.id,
+  });
   revalidatePath(`/products/${batch.productId}`);
   revalidatePath("/products");
   return { ok: true };

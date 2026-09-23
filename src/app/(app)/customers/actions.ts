@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { customers } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
+import { recordAudit } from "@/lib/audit";
 import { stateNameByCode, TAMIL_NADU_CODE } from "@/lib/india-states";
 import { findCustomerByPhone } from "@/lib/billing-queries";
 
@@ -35,7 +36,7 @@ export type CustomerInput = z.infer<typeof schema>;
 export async function saveCustomer(
   input: CustomerInput & { id?: string },
 ): Promise<CustomerState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const parsed = schema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -67,6 +68,14 @@ export async function saveCustomer(
       .where(
         and(eq(customers.id, input.id), eq(customers.organizationId, organization.id)),
       );
+    await recordAudit({
+      orgId: organization.id,
+      action: "customer.updated",
+      entityType: "customer",
+      entityId: input.id,
+      summary: `Updated customer ${values.name}`,
+      actorUserId: user.id,
+    });
     revalidatePath("/customers");
     return { ok: true, id: input.id };
   }
@@ -75,6 +84,15 @@ export async function saveCustomer(
     .insert(customers)
     .values({ organizationId: organization.id, ...values })
     .returning();
+  await recordAudit({
+    orgId: organization.id,
+    action: "customer.created",
+    entityType: "customer",
+    entityId: row.id,
+    summary: `Created customer ${values.name}`,
+    details: { phone: values.phone },
+    actorUserId: user.id,
+  });
   revalidatePath("/customers");
   return { ok: true, id: row.id };
 }
@@ -85,6 +103,14 @@ export async function deleteCustomer(id: string): Promise<CustomerState> {
     .update(customers)
     .set({ deletedAt: new Date(), deletedBy: user.id })
     .where(and(eq(customers.id, id), eq(customers.organizationId, organization.id)));
+  await recordAudit({
+    orgId: organization.id,
+    action: "customer.archived",
+    entityType: "customer",
+    entityId: id,
+    summary: "Archived customer",
+    actorUserId: user.id,
+  });
   revalidatePath("/customers");
   return { ok: true };
 }

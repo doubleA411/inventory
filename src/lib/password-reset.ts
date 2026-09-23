@@ -5,6 +5,7 @@ import { eq, and, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, passwordResetTokens } from "@/lib/db/schema";
 import { sendEmail, getBaseUrl } from "@/lib/email";
+import { recordUserAudit } from "@/lib/audit";
 
 const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -86,6 +87,11 @@ export async function resetPassword(
       .update(passwordResetTokens)
       .set({ usedAt: new Date() })
       .where(eq(passwordResetTokens.id, row.id));
+  });
+  await recordUserAudit(row.userId, {
+    action: "auth.password_reset",
+    summary: "Reset their password using an emailed link",
+    actorUserId: row.userId,
   });
 
   return { ok: true };

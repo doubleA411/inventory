@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { organizations, users, products, categories, stockBatches } from "@/lib/db/schema";
+import { organizations, users, memberships, products, categories, stockBatches } from "@/lib/db/schema";
 import { importProducts } from "@/lib/import-products";
 
 describe("importProducts (CSV/XLSX import)", () => {
@@ -15,10 +15,21 @@ describe("importProducts (CSV/XLSX import)", () => {
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   beforeAll(async () => {
-    const [org] = await db.select().from(organizations).limit(1);
-    if (!org) throw new Error("No org — run `npm run db:seed` first.");
+    // The dev database holds a real business alongside the demo org — always
+    // scope to the demo org so tests can never touch real records.
+    const [org] = await db
+      .select()
+      .from(organizations)
+      .where(eq(organizations.name, "Sample Caterers"))
+      .limit(1);
+    if (!org) throw new Error('No "Sample Caterers" org — run `npm run db:seed` first.');
     orgId = org.id;
-    const [user] = await db.select().from(users).limit(1);
+    const [user] = await db
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(memberships, eq(memberships.userId, users.id))
+      .where(eq(memberships.organizationId, orgId))
+      .limit(1);
     if (!user) throw new Error("No user — run `npm run db:seed` first.");
     userId = user.id;
   });

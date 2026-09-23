@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { organizations } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
+import { recordAudit } from "@/lib/audit";
 import { stateNameByCode } from "@/lib/india-states";
 import {
   saveUpload,
@@ -51,7 +52,7 @@ export async function updateSettingsAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const parsed = settingsSchema.safeParse({
     name: formData.get("name"),
     legalName: str(formData.get("legalName")),
@@ -116,6 +117,29 @@ export async function updateSettingsAction(
     })
     .where(eq(organizations.id, organization.id));
 
+  // Record which business settings moved, old → new. Bank details and numbering
+  // are exactly what someone would quietly change, so each one is named.
+  const before: Record<string, unknown> = organization;
+  const norm = (v: unknown) => (v == null || v === "" ? null : String(v));
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+  for (const [key, value] of Object.entries(d)) {
+    if (norm(before[key]) !== norm(value)) {
+      changes[key] = { from: before[key] ?? null, to: value ?? null };
+    }
+  }
+  if (Object.keys(changes).length) {
+    await recordAudit({
+      orgId: organization.id,
+      action: "settings.updated",
+      entityType: "organization",
+      entityId: organization.id,
+      entityLabel: d.name,
+      summary: `Updated business settings: ${Object.keys(changes).join(", ")}`,
+      details: changes,
+      actorUserId: user.id,
+    });
+  }
+
   revalidatePath("/settings");
   return { ok: true };
 }
@@ -126,7 +150,7 @@ export async function saveLetterheadMargins(
   customerTop: number,
   docTitleTop: number,
 ): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const clamp = (n: number) => Math.max(0, Math.min(700, Math.round(n)));
   await db
     .update(organizations)
@@ -137,6 +161,21 @@ export async function saveLetterheadMargins(
       docTitleTop: String(clamp(docTitleTop)),
     })
     .where(eq(organizations.id, organization.id));
+  await recordAudit({
+    orgId: organization.id,
+    action: "settings.letterhead_margins_updated",
+    entityType: "organization",
+    entityId: organization.id,
+    entityLabel: organization.name,
+    summary: "Updated letterhead margins",
+    details: {
+      top: clamp(top),
+      bottom: clamp(bottom),
+      customerTop: clamp(customerTop),
+      docTitleTop: clamp(docTitleTop),
+    },
+    actorUserId: user.id,
+  });
   revalidatePath("/settings");
   return { ok: true };
 }
@@ -146,7 +185,7 @@ export async function saveDocAppearance(
   bodyColor: string,
   fontSize: number,
 ): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const hex = /^#[0-9a-fA-F]{6}$/;
   if (!hex.test(headingColor) || !hex.test(bodyColor)) {
     return { error: "Colors must be valid hex values." };
@@ -159,6 +198,16 @@ export async function saveDocAppearance(
       docFontSize: Math.max(10, Math.min(22, Math.round(fontSize))),
     })
     .where(eq(organizations.id, organization.id));
+  await recordAudit({
+    orgId: organization.id,
+    action: "settings.document_appearance_updated",
+    entityType: "organization",
+    entityId: organization.id,
+    entityLabel: organization.name,
+    summary: "Updated document colors and font size",
+    details: { headingColor, bodyColor, fontSize },
+    actorUserId: user.id,
+  });
   revalidatePath("/settings");
   return { ok: true };
 }
@@ -176,7 +225,7 @@ export async function uploadAssetAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   // `field` arrives as an ordinary server-action argument, so it is caller
   // input rather than something the client component pins down — check it
   // against the allowlist's own keys before it is used as a column name below.
@@ -216,6 +265,17 @@ export async function uploadAssetAction(
     .update(organizations)
     .set(patch)
     .where(eq(organizations.id, organization.id));
+  const assetName = { logoUrl: "logo", letterheadUrl: "letterhead", signatureUrl: "signature" }[field];
+  await recordAudit({
+    orgId: organization.id,
+    action: "settings.asset_uploaded",
+    entityType: "organization",
+    entityId: organization.id,
+    entityLabel: organization.name,
+    summary: `Uploaded a new ${assetName}`,
+    details: { asset: assetName, url },
+    actorUserId: user.id,
+  });
 
   revalidatePath("/settings");
   return { ok: true };

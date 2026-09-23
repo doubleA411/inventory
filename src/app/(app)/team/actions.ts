@@ -4,8 +4,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { memberships } from "@/lib/db/schema";
+import { memberships, users } from "@/lib/db/schema";
 import { requireRole, createTeamMember, getAuthContext, hasRole } from "@/lib/auth";
+import { recordAudit } from "@/lib/audit";
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -20,7 +21,7 @@ export async function inviteMemberAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const parsed = inviteSchema.safeParse({
     name: formData.get("name"),
     email: formData.get("email"),
@@ -35,6 +36,16 @@ export async function inviteMemberAction(
     ...parsed.data,
   });
   if (!res.ok) return { error: res.error };
+  await recordAudit({
+    orgId: organization.id,
+    action: "team.member_added",
+    entityType: "user",
+    entityId: res.userId,
+    entityLabel: parsed.data.name,
+    summary: `Added ${parsed.data.name} (${parsed.data.email}) as ${parsed.data.role}`,
+    details: { email: parsed.data.email, role: parsed.data.role },
+    actorUserId: user.id,
+  });
   revalidatePath("/team");
   return { ok: true };
 }
@@ -42,7 +53,7 @@ export async function inviteMemberAction(
 export async function removeMemberAction(
   membershipId: string,
 ): Promise<ActionState> {
-  const { organization, role } = await requireRole("admin");
+  const { organization, role, user } = await requireRole("admin");
   const ctx = await getAuthContext();
   // Don't let someone remove their own membership.
   if (ctx && ctx.membership.id === membershipId) {
@@ -50,8 +61,15 @@ export async function removeMemberAction(
   }
 
   const [target] = await db
-    .select({ id: memberships.id, role: memberships.role })
+    .select({
+      id: memberships.id,
+      role: memberships.role,
+      userId: memberships.userId,
+      name: users.name,
+      email: users.email,
+    })
     .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
     .where(
       and(
         eq(memberships.id, membershipId),
@@ -97,6 +115,16 @@ export async function removeMemberAction(
         eq(memberships.organizationId, organization.id),
       ),
     );
+  await recordAudit({
+    orgId: organization.id,
+    action: "team.member_removed",
+    entityType: "user",
+    entityId: target.userId,
+    entityLabel: target.name,
+    summary: `Removed ${target.name} (${target.email}) from the team`,
+    details: { email: target.email, role: target.role },
+    actorUserId: user.id,
+  });
   revalidatePath("/team");
   return { ok: true };
 }

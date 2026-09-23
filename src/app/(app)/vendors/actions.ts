@@ -6,6 +6,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { vendors, products } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
+import { recordAudit } from "@/lib/audit";
+import { fmtMoney } from "@/lib/utils";
 import { TAMIL_NADU_CODE } from "@/lib/india-states";
 import {
   recordVendorPaymentCore,
@@ -39,7 +41,7 @@ export type VendorInput = z.infer<typeof schema>;
 export async function saveVendor(
   input: VendorInput & { id?: string },
 ): Promise<VendorState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const parsed = schema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -73,6 +75,15 @@ export async function saveVendor(
       .update(vendors)
       .set(patch)
       .where(and(eq(vendors.id, input.id), eq(vendors.organizationId, organization.id)));
+    await recordAudit({
+      orgId: organization.id,
+      action: "vendor.updated",
+      entityType: "vendor",
+      entityId: input.id,
+      summary: "Updated vendor",
+      details: { fields: Object.keys(patch) },
+      actorUserId: user.id,
+    });
     revalidatePath("/vendors");
     revalidatePath(`/vendors/${input.id}`);
     return { ok: true, id: input.id };
@@ -93,6 +104,15 @@ export async function saveVendor(
     revalidatePath("/products");
   }
 
+  await recordAudit({
+    orgId: organization.id,
+    action: "vendor.created",
+    entityType: "vendor",
+    entityId: row.id,
+    summary: `Created vendor ${values.name}`,
+    details: { openingBalance: d.openingBalance ?? 0, linkedProducts: d.productIds?.length ?? 0 },
+    actorUserId: user.id,
+  });
   revalidatePath("/vendors");
   return { ok: true, id: row.id };
 }
@@ -103,6 +123,14 @@ export async function deleteVendor(id: string): Promise<VendorState> {
     .update(vendors)
     .set({ deletedAt: new Date(), deletedBy: user.id })
     .where(and(eq(vendors.id, id), eq(vendors.organizationId, organization.id)));
+  await recordAudit({
+    orgId: organization.id,
+    action: "vendor.archived",
+    entityType: "vendor",
+    entityId: id,
+    summary: "Archived vendor",
+    actorUserId: user.id,
+  });
   revalidatePath("/vendors");
   return { ok: true };
 }
@@ -118,13 +146,21 @@ export async function quickCreateProduct(
   name: string,
   stockUnitId: string,
 ): Promise<{ ok: true; id: string; name: string } | { ok: false; error: string }> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const parsed = productSchema.safeParse({ name, stockUnitId, reorderLevel: 0 });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const result = await createProduct(organization.id, parsed.data);
   if (!result.ok) return result;
+  await recordAudit({
+    orgId: organization.id,
+    action: "product.created",
+    entityType: "product",
+    entityId: result.id,
+    summary: `Created product ${parsed.data.name}`,
+    actorUserId: user.id,
+  });
   revalidatePath("/products");
   return { ok: true, id: result.id, name: parsed.data.name };
 }
@@ -171,6 +207,17 @@ export async function applyVendorCredit(
 ): Promise<{ ok: true; applied: number; bills: number } | { ok: false; error: string }> {
   const { organization, user } = await requireRole("admin");
   const result = await applyVendorCreditCore(organization.id, user.id, vendorId);
+  if (result.ok && result.applied > 0) {
+    await recordAudit({
+      orgId: organization.id,
+      action: "vendor.credit_applied",
+      entityType: "vendor",
+      entityId: vendorId,
+      summary: `Applied ${fmtMoney(result.applied)} of vendor credit to ${result.bills} bill${result.bills === 1 ? "" : "s"}`,
+      details: { applied: result.applied, bills: result.bills },
+      actorUserId: user.id,
+    });
+  }
   if (result.ok) {
     revalidatePath(`/vendors/${vendorId}`);
     revalidatePath("/vendors");

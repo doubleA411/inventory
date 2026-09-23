@@ -14,6 +14,7 @@ import {
 import { computeTotals, financialYear, formatDocNumber, round2 } from "@/lib/tax";
 import { dateInTimeZone, fmtMoney } from "@/lib/utils";
 import { logActivity, actorName } from "@/lib/activity";
+import { writeAuditEvent } from "@/lib/audit";
 
 // Menu dish names and an event/function date under a line item — printed as
 // a menu page ahead of the priced document. Not used for pricing.
@@ -367,7 +368,7 @@ export async function recordPaymentCore(
   }
 
   await db.transaction(async (tx) => {
-    await tx.insert(payments).values({
+    const [paymentRow] = await tx.insert(payments).values({
       organizationId: orgId,
       invoiceId: d.invoiceId,
       amount: String(d.amount),
@@ -376,7 +377,7 @@ export async function recordPaymentCore(
       paidAt: d.paidAt || undefined,
       note: d.note || null,
       createdBy: userId,
-    });
+    }).returning({ id: payments.id });
     const newPaid = Number(inv.amountPaid) + d.amount;
     const status =
       newPaid >= Number(inv.total) ? "paid" : inv.status === "draft" ? "sent" : inv.status;
@@ -384,6 +385,16 @@ export async function recordPaymentCore(
       .update(invoices)
       .set({ amountPaid: String(newPaid), status })
       .where(eq(invoices.id, d.invoiceId));
+    await writeAuditEvent(tx, {
+      orgId,
+      action: "payment.recorded",
+      entityType: "payment",
+      entityId: paymentRow.id,
+      entityLabel: inv.number,
+      summary: `Recorded ${fmtMoney(d.amount)} by ${d.method.replace("_", " ")} on ${inv.number}`,
+      details: { amount: d.amount, method: d.method, reference: d.reference || null, paidAt: d.paidAt || null },
+      actorUserId: userId,
+    });
   });
 
   return { ok: true };
@@ -449,6 +460,16 @@ export async function reverseInvoicePaymentCore(
         }`,
         userId,
         userName: await actorName(tx, userId),
+      });
+      await writeAuditEvent(tx, {
+        orgId,
+        action: "payment.reversed",
+        entityType: "payment",
+        entityId: payment.id,
+        entityLabel: inv?.number ?? "Invoice payment",
+        summary: `Reversed ${fmtMoney(amount)} ${payment.method.replace("_", " ")} payment${inv ? ` on ${inv.number}` : ""}`,
+        details: { amount, method: payment.method, reference: payment.reference, paidAt: payment.paidAt },
+        actorUserId: userId,
       });
 
       return { ok: true as const, amount };

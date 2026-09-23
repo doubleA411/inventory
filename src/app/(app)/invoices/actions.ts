@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
+import { recordAudit } from "@/lib/audit";
 import {
   saveInvoiceCore,
   setInvoiceStatusCore,
@@ -21,6 +22,7 @@ export async function saveInvoice(raw: InvoiceInput): Promise<SaveResult> {
   const { organization, user } = await requireRole("admin");
   const result = await saveInvoiceCore(organization, user.id, raw);
   if (result.ok) {
+    await recordAudit({ orgId: organization.id, action: raw.id ? "invoice.updated" : "invoice.created", entityType: "invoice", entityId: result.id, summary: raw.id ? "Updated invoice" : "Created invoice", actorUserId: user.id });
     revalidatePath("/invoices");
     revalidatePath(`/invoices/${result.id}`);
   }
@@ -31,8 +33,9 @@ export async function setInvoiceStatus(
   id: string,
   status: "draft" | "sent" | "cancelled",
 ): Promise<{ ok: boolean; error?: string }> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const result = await setInvoiceStatusCore(organization.id, id, status);
+  if (result.ok) await recordAudit({ orgId: organization.id, action: "invoice.status_changed", entityType: "invoice", entityId: id, summary: `Changed invoice status to ${status}`, details: { status }, actorUserId: user.id });
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${id}`);
   return result;
@@ -44,6 +47,7 @@ export async function approveInvoice(
 ): Promise<{ ok: boolean; error?: string }> {
   const { organization, user } = await requireRole("owner");
   await approveInvoiceCore(organization.id, user.id, id);
+  await recordAudit({ orgId: organization.id, action: "invoice.approved", entityType: "invoice", entityId: id, summary: "Approved invoice", actorUserId: user.id });
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${id}`);
   return { ok: true };
@@ -51,8 +55,9 @@ export async function approveInvoice(
 
 /** Owner-only: revoke an invoice's approval. */
 export async function revokeInvoiceApproval(id: string): Promise<void> {
-  const { organization } = await requireRole("owner");
+  const { organization, user } = await requireRole("owner");
   await revokeInvoiceApprovalCore(organization.id, id);
+  await recordAudit({ orgId: organization.id, action: "invoice.approval_revoked", entityType: "invoice", entityId: id, summary: "Revoked invoice approval", actorUserId: user.id });
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${id}`);
 }
@@ -63,6 +68,7 @@ export async function deleteInvoice(
   const { organization, user } = await requireRole("admin");
   const result = await deleteInvoiceCore(organization.id, id, user.id);
   if (result.ok) {
+    await recordAudit({ orgId: organization.id, action: "invoice.archived", entityType: "invoice", entityId: id, summary: "Archived invoice", actorUserId: user.id });
     revalidatePath("/invoices");
     revalidatePath("/dashboard");
   }
@@ -71,16 +77,18 @@ export async function deleteInvoice(
 
 /** Generate (or replace) this invoice's public share link. */
 export async function createInvoiceShareLink(id: string): Promise<{ token: string }> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const token = await generateInvoiceShareToken(organization.id, id);
+  await recordAudit({ orgId: organization.id, action: "invoice.share_link_created", entityType: "invoice", entityId: id, summary: "Created a public share link", actorUserId: user.id });
   revalidatePath(`/invoices/${id}`);
   return { token };
 }
 
 /** Revoke the public share link — the old link stops working immediately. */
 export async function revokeInvoiceShareLink(id: string): Promise<void> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   await revokeInvoiceShareToken(organization.id, id);
+  await recordAudit({ orgId: organization.id, action: "invoice.share_link_revoked", entityType: "invoice", entityId: id, summary: "Revoked the public share link", actorUserId: user.id });
   revalidatePath(`/invoices/${id}`);
 }
 

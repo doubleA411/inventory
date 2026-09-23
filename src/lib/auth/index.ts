@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, memberships, organizations } from "@/lib/db/schema";
+import { recordUserAudit } from "@/lib/audit";
 import type { Role, User, Organization, Membership } from "@/lib/db/schema";
 import {
   createSession,
@@ -91,12 +92,27 @@ export async function login(
   if (!user) return { ok: false, error: "Invalid email or password." };
 
   const valid = await bcrypt.compare(password, user.passwordHash);
-  if (!valid) return { ok: false, error: "Invalid email or password." };
+  if (!valid) {
+    // Unknown emails aren't logged: there's no organization to attribute them to.
+    await recordUserAudit(user.id, {
+      action: "auth.login_failed",
+      entityLabel: user.name,
+      summary: `Failed sign-in attempt for ${user.email}`,
+      actorName: user.name,
+    });
+    return { ok: false, error: "Invalid email or password." };
+  }
 
   await createSession({
     userId: user.id,
     email: user.email,
     passwordHash: user.passwordHash,
+  });
+  await recordUserAudit(user.id, {
+    action: "auth.login",
+    entityLabel: user.name,
+    summary: `${user.name} signed in`,
+    actorUserId: user.id,
   });
   return { ok: true };
 }
@@ -133,6 +149,11 @@ export async function changePasswordCore(
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
   await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+  await recordUserAudit(userId, {
+    action: "auth.password_changed",
+    summary: "Changed their password",
+    actorUserId: userId,
+  });
   return { ok: true, passwordHash };
 }
 
@@ -146,7 +167,7 @@ export async function createTeamMember(params: {
   password: string;
   name: string;
   role: Role;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; userId: string } | { ok: false; error: string }> {
   const email = params.email.toLowerCase().trim();
   const existing = await db
     .select()
@@ -166,5 +187,5 @@ export async function createTeamMember(params: {
     organizationId: params.organizationId,
     role: params.role,
   });
-  return { ok: true };
+  return { ok: true, userId: user.id };
 }

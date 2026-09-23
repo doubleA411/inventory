@@ -63,8 +63,14 @@ describe("applyMovement (FEFO + conversion + ledger)", () => {
   }
 
   beforeAll(async () => {
-    const [org] = await db.select().from(organizations).limit(1);
-    if (!org) throw new Error("No org — run `npm run db:seed` first.");
+    // The dev database holds a real business alongside the demo org — always
+    // scope to the demo org so tests can never touch real records.
+    const [org] = await db
+      .select()
+      .from(organizations)
+      .where(eq(organizations.name, "Sample Caterers"))
+      .limit(1);
+    if (!org) throw new Error('No "Sample Caterers" org — run `npm run db:seed` first.');
     orgId = org.id;
     kgId = await unitId("kg");
     litreId = await unitId("L");

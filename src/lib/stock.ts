@@ -9,6 +9,7 @@ import {
   type MovementType,
 } from "@/lib/db/schema";
 import { convertQuantity, roundQty } from "@/lib/units";
+import { writeAuditEvent } from "@/lib/audit";
 
 export type ApplyMovementInput = {
   organizationId: string;
@@ -258,6 +259,23 @@ export async function applyMovement(
           quotationId: input.quotationId ?? null,
         })
         .returning();
+
+      await writeAuditEvent(tx, {
+        orgId: input.organizationId,
+        action: `stock.${input.type}`,
+        entityType: "stock_movement",
+        entityId: movement.id,
+        entityLabel: product.name,
+        summary: `${input.type === "adjustment" ? `${input.direction ?? "increase"} adjustment` : input.type} of ${input.quantity} ${moveUnit.symbol} for ${product.name}`,
+        details: {
+          movementType: input.type,
+          quantity: input.quantity,
+          unit: moveUnit.symbol,
+          balanceAfter,
+          note: input.note ?? null,
+        },
+        actorUserId: input.userId ?? null,
+      });
 
       return { ok: true as const, balanceAfter, movementId: movement.id };
     });

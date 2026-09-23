@@ -4,7 +4,9 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
 const COOKIE_NAME = "inv_session";
+const AUDIT_COOKIE_NAME = "inv_audit_access";
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+const AUDIT_MAX_AGE = 60 * 15; // Password re-entry grants a short, separate audit session.
 
 function getSecret(): Uint8Array {
   const secret = process.env.AUTH_SECRET;
@@ -99,4 +101,40 @@ export function sessionMatchesUser(session: ReadSession, passwordHash: string): 
 export async function destroySession(): Promise<void> {
   const store = await cookies();
   store.delete(COOKIE_NAME);
+  store.delete({ name: AUDIT_COOKIE_NAME, path: "/log" });
+}
+
+/** Grant the current owner a short-lived, password-confirmed audit-log session. */
+export async function createAuditAccess(userId: string, passwordHash: string): Promise<void> {
+  const token = await new SignJWT({ userId, pwh: sessionAuthHash(passwordHash), scope: "audit" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(`${AUDIT_MAX_AGE}s`)
+    .sign(getSecret());
+  const store = await cookies();
+  store.set(AUDIT_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/log",
+    maxAge: AUDIT_MAX_AGE,
+  });
+}
+
+/** Check that this browser recently re-entered this user's current password. */
+export async function hasAuditAccess(userId: string, passwordHash: string): Promise<boolean> {
+  const store = await cookies();
+  const token = store.get(AUDIT_COOKIE_NAME)?.value;
+  if (!token) return false;
+  try {
+    const { payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] });
+    return (
+      payload.scope === "audit" &&
+      payload.userId === userId &&
+      typeof payload.pwh === "string" &&
+      hashesMatch(payload.pwh, sessionAuthHash(passwordHash))
+    );
+  } catch {
+    return false;
+  }
 }

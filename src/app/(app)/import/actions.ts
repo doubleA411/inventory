@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { units, products } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
+import { recordAudit } from "@/lib/audit";
 import { importProducts, type ImportRow, type ImportResult } from "@/lib/import-products";
 
 export async function importProductsAction(
@@ -12,6 +13,17 @@ export async function importProductsAction(
 ): Promise<ImportResult> {
   const { organization, user } = await requireRole("admin");
   const result = await importProducts(organization.id, user.id, rows);
+  if (result.inserted > 0) {
+    await recordAudit({
+      orgId: organization.id,
+      action: "product.imported",
+      entityType: "product",
+      entityLabel: `${result.inserted} products`,
+      summary: `Imported ${result.inserted} product${result.inserted === 1 ? "" : "s"} from a spreadsheet`,
+      details: { inserted: result.inserted, rows: rows.length, errors: result.errors.length },
+      actorUserId: user.id,
+    });
+  }
   revalidatePath("/products");
   revalidatePath("/dashboard");
   return result;

@@ -1006,6 +1006,37 @@ export const activityLog = pgTable(
   ],
 );
 
+/**
+ * Append-only, organization-wide audit trail. Unlike the smaller activity_log
+ * above (which exists to preserve payment reversals), this records every
+ * material action performed through the product. Entity details are copied
+ * into the event so a later rename or soft-delete cannot erase the evidence.
+ */
+export const auditEvents = pgTable(
+  "audit_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: uuid("entity_id"),
+    entityLabel: text("entity_label"),
+    summary: text("summary").notNull(),
+    details: jsonb("details").$type<Record<string, unknown>>(),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    actorName: text("actor_name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("audit_events_org_created_idx").on(t.organizationId, t.createdAt),
+    index("audit_events_org_action_idx").on(t.organizationId, t.action),
+    index("audit_events_org_entity_idx").on(t.organizationId, t.entityType),
+    index("audit_events_org_actor_idx").on(t.organizationId, t.actorUserId),
+  ],
+);
+
 export type Customer = typeof customers.$inferSelect;
 export type Quotation = typeof quotations.$inferSelect;
 export type QuotationItem = typeof quotationItems.$inferSelect;
@@ -1027,4 +1058,5 @@ export type PurchaseList = typeof purchaseLists.$inferSelect;
 export type PurchaseListItem = typeof purchaseListItems.$inferSelect;
 export type PurchaseListStatus = (typeof purchaseListStatusEnum.enumValues)[number];
 export type ActivityLogEntry = typeof activityLog.$inferSelect;
+export type AuditEvent = typeof auditEvents.$inferSelect;
 export type ActivityAction = (typeof activityActionEnum.enumValues)[number];

@@ -19,6 +19,7 @@ import { roundQty } from "@/lib/units";
 import { financialYear, formatDocNumber } from "@/lib/tax";
 import { dateInTimeZone, fmtMoney } from "@/lib/utils";
 import { logActivity, actorName } from "@/lib/activity";
+import { auditLabel, writeAuditEvent } from "@/lib/audit";
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -551,6 +552,15 @@ export async function recordVendorPaymentCore(
         createdBy: userId,
       });
     }
+    await writeAuditEvent(tx, {
+      orgId,
+      action: "vendor_payment.recorded",
+      entityType: "vendor_payment",
+      entityLabel: await auditLabel(tx, orgId, "vendor", d.vendorId),
+      summary: `Recorded ${fmtMoney(d.amount)} ${d.method.replace("_", " ")} payment to vendor`,
+      details: { amount: d.amount, method: d.method, reference: d.reference || null, paidAt: d.paidAt || null },
+      actorUserId: userId,
+    });
   });
 
   return { ok: true };
@@ -768,6 +778,18 @@ export async function reverseVendorPaymentCore(
         }`,
         userId,
         userName: await actorName(tx, userId),
+      });
+      await writeAuditEvent(tx, {
+        orgId,
+        action: "vendor_payment.reversed",
+        entityType: "vendor_payment",
+        entityId: payment.id,
+        entityLabel: payment.vendorId
+          ? await auditLabel(tx, orgId, "vendor", payment.vendorId)
+          : "Vendor payment",
+        summary: `Reversed ${fmtMoney(amount)} vendor payment${group.length > 1 ? ` (${group.length} allocations)` : ""}`,
+        details: { amount, allocations: group.length, method: payment.method, reference: payment.reference },
+        actorUserId: userId,
       });
 
       return { ok: true as const, amount, rows: group.length };

@@ -10,8 +10,10 @@ const auth = vi.hoisted(() => ({ orgId: "" }));
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/auth", () => ({
-  requireRole: async () => ({ organization: { id: auth.orgId } }),
+  requireRole: async () => ({ organization: { id: auth.orgId }, user: { id: "test-user" } }),
 }));
+// Audit events are append-only, so tests must not write them to the dev database.
+vi.mock("@/lib/audit", () => ({ recordAudit: async () => {} }));
 
 const { saveVendor } = await import("./actions");
 

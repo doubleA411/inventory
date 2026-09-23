@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { units, unitGroups, products, stockMovements } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
+import { auditLabel, recordAudit } from "@/lib/audit";
 import { isUniqueViolation } from "@/lib/db-errors";
 
 export type ActionState = { error?: string; ok?: boolean };
@@ -21,7 +22,7 @@ export async function createUnitAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const parsed = unitSchema.safeParse({
     groupId: formData.get("groupId"),
     name: formData.get("name"),
@@ -57,12 +58,21 @@ export async function createUnitAction(
     }
     return { error: "Could not create unit." };
   }
+  await recordAudit({
+    orgId: organization.id,
+    action: "unit.created",
+    entityType: "unit",
+    entityLabel: d.symbol,
+    summary: `Created unit ${d.name} (${d.symbol}) in ${group.name}`,
+    details: { group: group.name, factorToBase: d.factorToBase },
+    actorUserId: user.id,
+  });
   revalidatePath("/units");
   return { ok: true };
 }
 
 export async function createUnitGroupAction(name: string): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   const clean = name.trim();
   if (!clean) return { error: "Type name required" };
   try {
@@ -72,12 +82,20 @@ export async function createUnitGroupAction(name: string): Promise<ActionState> 
   } catch {
     return { error: "That unit type already exists" };
   }
+  await recordAudit({
+    orgId: organization.id,
+    action: "unit_group.created",
+    entityType: "unit_group",
+    entityLabel: clean,
+    summary: `Created unit type ${clean}`,
+    actorUserId: user.id,
+  });
   revalidatePath("/units");
   return { ok: true };
 }
 
 export async function deleteUnitAction(unitId: string): Promise<ActionState> {
-  const { organization } = await requireRole("admin");
+  const { organization, user } = await requireRole("admin");
   // Block deletion if the unit is in use (as a stock unit or in movements).
   const usedByProduct = await db
     .select({ id: products.id })
@@ -97,9 +115,21 @@ export async function deleteUnitAction(unitId: string): Promise<ActionState> {
   if (usedInMovement.length) {
     return { error: "Can't delete — this unit appears in stock history." };
   }
+  const symbol = await auditLabel(db, organization.id, "unit", unitId);
   await db
     .delete(units)
     .where(and(eq(units.id, unitId), eq(units.organizationId, organization.id)));
+  if (symbol) {
+    await recordAudit({
+      orgId: organization.id,
+      action: "unit.deleted",
+      entityType: "unit",
+      entityId: unitId,
+      entityLabel: symbol,
+      summary: `Deleted unit ${symbol}`,
+      actorUserId: user.id,
+    });
+  }
   revalidatePath("/units");
   return { ok: true };
 }
