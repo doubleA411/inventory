@@ -1037,6 +1037,17 @@ export const auditEvents = pgTable(
   ],
 );
 
+/**
+ * Fixed-window attempt counters for sign-in, signup, password reset and the
+ * audit-log unlock. One row per key ("login:email:x@y", "signup:ip:1.2.3.4");
+ * a row is reset in place when its window lapses, never deleted.
+ */
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull().default(0),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type Customer = typeof customers.$inferSelect;
 export type Quotation = typeof quotations.$inferSelect;
 export type QuotationItem = typeof quotationItems.$inferSelect;

@@ -218,6 +218,13 @@
       "when": 1790080697002,
       "tag": "0030_stiff_kingpin",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790155814538,
+      "tag": "0031_square_carlie_cooper",
+      "breakpoints": true
     }
   ]
 }

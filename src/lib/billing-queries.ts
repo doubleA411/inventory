@@ -135,7 +135,7 @@ export async function listQuotations(
       takenAt: quotations.takenAt,
     })
     .from(quotations)
-    .leftJoin(customers, eq(quotations.customerId, customers.id))
+    .leftJoin(customers, and(eq(quotations.customerId, customers.id), eq(customers.organizationId, quotations.organizationId)))
     .leftJoin(quotationItems, eq(quotationItems.quotationId, quotations.id))
     .where(and(...conds))
     .groupBy(quotations.id, customers.name)
@@ -165,7 +165,7 @@ export async function listQuotationsForPicker(orgId: string) {
       earliestEventDate: sql<string | null>`min(${quotationItems.eventDate})`,
     })
     .from(quotations)
-    .leftJoin(customers, eq(quotations.customerId, customers.id))
+    .leftJoin(customers, and(eq(quotations.customerId, customers.id), eq(customers.organizationId, quotations.organizationId)))
     .leftJoin(quotationItems, eq(quotationItems.quotationId, quotations.id))
     .where(and(eq(quotations.organizationId, orgId), isNull(quotations.deletedAt)))
     .groupBy(quotations.id, customers.name)
@@ -220,7 +220,7 @@ export async function listUpcomingEvents(
       nextEventDate,
     })
     .from(quotations)
-    .leftJoin(customers, eq(quotations.customerId, customers.id))
+    .leftJoin(customers, and(eq(quotations.customerId, customers.id), eq(customers.organizationId, quotations.organizationId)))
     .leftJoin(quotationItems, eq(quotationItems.quotationId, quotations.id))
     .leftJoin(invoices, eq(invoices.id, quotations.convertedInvoiceId))
     .where(
@@ -296,7 +296,7 @@ export async function listInvoices(
       customerName: customers.name,
     })
     .from(invoices)
-    .leftJoin(customers, eq(invoices.customerId, customers.id))
+    .leftJoin(customers, and(eq(invoices.customerId, customers.id), eq(customers.organizationId, invoices.organizationId)))
     .where(and(...conds))
     .orderBy(desc(invoices.createdAt));
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { findSchemaDrift } from "@/lib/db/drift";
+import { hasCronSecret } from "@/lib/cron-auth";
 
 /**
  * Lightweight health check. Also used by a daily Vercel Cron to keep the
@@ -23,10 +24,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, db: "down" }, { status: 503 });
   }
 
-  const drift = await findSchemaDrift();
+  // Bounded, so a stuck connection shows up as a failed check instead of a
+  // request that hangs until the platform kills it.
+  let drift;
+  try {
+    drift = await Promise.race([
+      findSchemaDrift(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("schema check timed out")), 10_000),
+      ),
+    ]);
+  } catch (e) {
+    console.error("[health] schema check failed", e);
+    return NextResponse.json({ ok: false, db: "up", schema: "unknown" }, { status: 503 });
+  }
   if (drift.length > 0) {
-    const secret = process.env.CRON_SECRET;
-    const trusted = !!secret && req.headers.get("authorization") === `Bearer ${secret}`;
+    const trusted = hasCronSecret(req.headers.get("authorization"));
     return NextResponse.json(
       {
         ok: false,

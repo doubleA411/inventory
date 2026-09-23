@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { and, asc, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { foreignRefError } from "@/lib/tenant";
 import {
   expenseCategories,
   expenses,
@@ -73,6 +74,11 @@ export async function saveExpense(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const d = parsed.data;
+  const refError = await foreignRefError(orgId, {
+    expenseCategory: d.categoryId,
+    quotation: d.quotationId,
+  });
+  if (refError) return { ok: false, error: refError };
   const values = {
     categoryId: d.categoryId || null,
     quotationId: d.quotationId || null,
@@ -256,9 +262,9 @@ export async function getExpenseLedger(
         notes: expenses.notes,
       })
       .from(expenses)
-      .leftJoin(expenseCategories, eq(expenses.categoryId, expenseCategories.id))
-      .leftJoin(quotations, eq(expenses.quotationId, quotations.id))
-      .leftJoin(customers, eq(quotations.customerId, customers.id))
+      .leftJoin(expenseCategories, and(eq(expenses.categoryId, expenseCategories.id), eq(expenseCategories.organizationId, expenses.organizationId)))
+      .leftJoin(quotations, and(eq(expenses.quotationId, quotations.id), eq(quotations.organizationId, expenses.organizationId)))
+      .leftJoin(customers, and(eq(quotations.customerId, customers.id), eq(customers.organizationId, quotations.organizationId)))
       .where(and(...conds));
 
     for (const r of expenseRows) {

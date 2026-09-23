@@ -6,8 +6,9 @@ import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { products, categories, stockBatches, stockMovements } from "@/lib/db/schema";
-import { requireAuth, requireRole } from "@/lib/auth";
+import { hasRole, requireAuth, requireRole } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
+import { foreignRefError } from "@/lib/tenant";
 import { fmtMoney } from "@/lib/utils";
 import { applyMovement } from "@/lib/stock";
 import { productSchema, createProduct, updateProduct } from "@/lib/products";
@@ -282,6 +283,8 @@ export async function bulkSetCategoryAction(
   const { organization, user } = await requireRole("admin");
   const parsed = idsSchema.safeParse(ids);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  const refError = await foreignRefError(organization.id, { category: categoryId });
+  if (refError) return { error: refError };
   await db
     .update(products)
     .set({ categoryId })
@@ -378,7 +381,7 @@ export async function logMovementAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { organization, user } = await requireAuth();
+  const { organization, user, role } = await requireAuth();
   const parsed = movementSchema.safeParse({
     productId: formData.get("productId"),
     type: formData.get("type"),
@@ -397,6 +400,12 @@ export async function logMovementAction(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const d = parsed.data;
+
+  // Staff can log goods arriving from a vendor, but recording money paid out
+  // is admin-only everywhere else (recordVendorPayment) and stays so here.
+  if (d.paidNow && d.paidNow > 0 && !hasRole(role, "admin")) {
+    return { error: "Only an admin can record a payment to a vendor." };
+  }
 
   // Vendor picked on a restock — restock and wrap the new batch in a
   // one-line purchase bill so it shows up in the vendor's ledger.

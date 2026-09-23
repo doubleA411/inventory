@@ -26,6 +26,19 @@ async function launchBrowser(): Promise<Browser> {
   return puppeteer.launch({ headless: true }) as unknown as Promise<Browser>;
 }
 
+/** Hosts document images (logo, letterhead, signature) may load from. */
+function storageHostnames(): Set<string> {
+  const hosts = new Set<string>();
+  for (const url of [process.env.SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_URL]) {
+    try {
+      if (url) hosts.add(new URL(url).hostname);
+    } catch {
+      // ignore malformed env
+    }
+  }
+  return hosts;
+}
+
 /** "INV/26-27/0001" → "INV-26-27-0001.pdf" — safe for both filesystem keys and Content-Disposition. */
 export function docFilename(number: string): string {
   return `${number.replace(/[^\w-]+/g, "-")}.pdf`;
@@ -50,9 +63,34 @@ export async function renderPagePdf(
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
-    if (cookieHeader) {
-      await page.setExtraHTTPHeaders({ cookie: cookieHeader });
-    }
+    // The user's session cookie goes only to the app's own origin. Extra HTTP
+    // headers would attach it to every request the page makes — including the
+    // logo/letterhead fetched from storage. Anything that isn't the app or the
+    // storage host is refused, so the renderer can't be pointed at internal
+    // addresses (cloud metadata, localhost services) or file:// URLs.
+    const appOrigin = new URL(baseUrl).origin;
+    const storageHosts = storageHostnames();
+    await page.setRequestInterception(true);
+    page.on("request", (request) => {
+      let target: URL;
+      try {
+        target = new URL(request.url());
+      } catch {
+        return void request.abort();
+      }
+      if (target.origin === appOrigin) {
+        const headers = { ...request.headers() };
+        if (cookieHeader) headers.cookie = cookieHeader;
+        return void request.continue({ headers });
+      }
+      if (target.protocol === "data:" || target.protocol === "blob:") {
+        return void request.continue();
+      }
+      if (target.protocol === "https:" && storageHosts.has(target.hostname)) {
+        return void request.continue();
+      }
+      return void request.abort();
+    });
     const url = new URL(pathname, baseUrl).toString();
     const res = await page.goto(url, { waitUntil: "networkidle0" });
     if (!res || !res.ok()) {

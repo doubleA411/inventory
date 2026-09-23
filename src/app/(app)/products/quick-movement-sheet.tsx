@@ -32,6 +32,7 @@ export function QuickMovementSheet({
   units,
   vendors,
   events,
+  canRecordPayment,
   onClose,
 }: {
   product: ProductRow | null;
@@ -39,6 +40,8 @@ export function QuickMovementSheet({
   units: QuickUnit[];
   vendors: QuickVendor[];
   events: QuickEvent[];
+  /** Paying a vendor is admin-only; staff can still log who the goods came from. */
+  canRecordPayment: boolean;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -155,20 +158,22 @@ export function QuickMovementSheet({
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="label" htmlFor="qms-paid">
-                  Paid now (optional)
-                </label>
-                <input
-                  id="qms-paid"
-                  name="paidNow"
-                  type="number"
-                  step="any"
-                  min="0"
-                  className="input"
-                  placeholder="0.00"
-                />
-              </div>
+              {canRecordPayment && (
+                <div>
+                  <label className="label" htmlFor="qms-paid">
+                    Paid now (optional)
+                  </label>
+                  <input
+                    id="qms-paid"
+                    name="paidNow"
+                    type="number"
+                    step="any"
+                    min="0"
+                    className="input"
+                    placeholder="0.00"
+                  />
+                </div>
+              )}
             </div>
           </>
         ) : (

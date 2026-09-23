@@ -749,4 +749,91 @@ describe("billing (quotations, invoices, approvals, payments)", () => {
       expect(payment.note).toMatch(/advance/i);
     });
   });
+
+  describe("tenant isolation and concurrency", () => {
+    it("refuses to save over another organization's invoice and leaves its items alone", async () => {
+      const victim = await saveInvoiceCore(gstOrg, userId, {
+        customerId: sameStateCustomerId,
+        issueDate: "2026-07-24",
+        items: [ITEM],
+      });
+      expect(victim.ok).toBe(true);
+      if (!victim.ok) return;
+
+      const attack = await saveInvoiceCore(noGstOrg, userId, {
+        id: victim.id,
+        issueDate: "2026-07-24",
+        items: [{ ...ITEM, description: "Pay to attacker@upi" }],
+      });
+      expect(attack.ok).toBe(false);
+
+      const inv = await getInvoiceFull(gstOrg.id, victim.id);
+      expect(inv?.items.map((i) => i.description)).toEqual(["Catering service"]);
+    });
+
+    it("refuses to save over another organization's quotation", async () => {
+      const victim = await saveQuotationCore(gstOrg, userId, {
+        customerId: sameStateCustomerId,
+        issueDate: "2026-07-24",
+        items: [ITEM],
+      });
+      expect(victim.ok).toBe(true);
+      if (!victim.ok) return;
+      const attack = await saveQuotationCore(noGstOrg, userId, {
+        id: victim.id,
+        issueDate: "2026-07-24",
+        items: [{ ...ITEM, description: "tampered" }],
+      });
+      expect(attack.ok).toBe(false);
+      const q = await getQuotationFull(gstOrg.id, victim.id);
+      expect(q?.items.map((i) => i.description)).toEqual(["Catering service"]);
+    });
+
+    it("refuses another organization's customer on a new invoice", async () => {
+      const res = await saveInvoiceCore(noGstOrg, userId, {
+        customerId: sameStateCustomerId, // belongs to gstOrg
+        issueDate: "2026-07-24",
+        items: [ITEM],
+      });
+      expect(res.ok).toBe(false);
+    });
+
+    it("converts a quotation only once, even when asked twice at the same moment", async () => {
+      const q = await saveQuotationCore(gstOrg, userId, {
+        customerId: sameStateCustomerId,
+        issueDate: "2026-07-24",
+        items: [ITEM],
+      });
+      expect(q.ok).toBe(true);
+      if (!q.ok) return;
+      await recordQuotationAdvanceCore(gstOrg.id, q.id, 200);
+      await approveQuotationCore(gstOrg.id, userId, q.id);
+
+      const results = await Promise.all([
+        convertToInvoiceCore(gstOrg, userId, q.id),
+        convertToInvoiceCore(gstOrg, userId, q.id),
+      ]);
+      expect(results.filter((r) => r.ok)).toHaveLength(1);
+      const made = await db.select().from(invoices).where(eq(invoices.quotationId, q.id));
+      expect(made).toHaveLength(1);
+      expect(Number(made[0].amountPaid)).toBe(200);
+    });
+
+    it("keeps both amounts when two payments land at the same moment", async () => {
+      const inv = await saveInvoiceCore(gstOrg, userId, {
+        customerId: sameStateCustomerId,
+        issueDate: "2026-07-24",
+        items: [ITEM], // 1180
+      });
+      expect(inv.ok).toBe(true);
+      if (!inv.ok) return;
+      await Promise.all([
+        recordPaymentCore(gstOrg.id, userId, { invoiceId: inv.id, amount: 100, method: "cash" }),
+        recordPaymentCore(gstOrg.id, userId, { invoiceId: inv.id, amount: 150, method: "cash" }),
+        recordPaymentCore(gstOrg.id, userId, { invoiceId: inv.id, amount: 200, method: "cash" }),
+      ]);
+      const [row] = await db.select().from(invoices).where(eq(invoices.id, inv.id));
+      expect(Number(row.amountPaid)).toBe(450);
+    });
+  });
 });

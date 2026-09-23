@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { foreignRefError } from "@/lib/tenant";
 import { products, stockBatches, stockMovements, units } from "@/lib/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { convertQuantity, convertUnitCost, roundQty } from "@/lib/units";
@@ -26,10 +27,21 @@ function roundMoney(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/** A product's unit, category and preferred vendor must all be this org's own. */
+function productRefError(organizationId: string, input: ProductInput) {
+  return foreignRefError(organizationId, {
+    unit: input.stockUnitId,
+    category: input.categoryId,
+    vendor: input.preferredVendorId,
+  });
+}
+
 export async function createProduct(
   organizationId: string,
   input: ProductInput,
 ): Promise<ProductResult> {
+  const refError = await productRefError(organizationId, input);
+  if (refError) return { ok: false, error: refError };
   try {
     const [row] = await db
       .insert(products)
@@ -59,6 +71,8 @@ export async function updateProduct(
   productId: string,
   input: ProductInput,
 ): Promise<ProductResult> {
+  const refError = await productRefError(organizationId, input);
+  if (refError) return { ok: false, error: refError };
   try {
     return await db.transaction(async (tx) => {
       const [current] = await tx

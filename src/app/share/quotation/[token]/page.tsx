@@ -4,6 +4,10 @@ import { getQuotationFull } from "@/lib/billing-queries";
 import { DocumentView, orgToDocOrg } from "@/components/document-view";
 import { PrintBar } from "../../../print/print-bar";
 
+// A share link is meant for one customer, not for search engines — keep a
+// link that gets posted somewhere public out of the index.
+export const metadata = { robots: { index: false, follow: false } };
+
 // Public — no auth. The token itself is the credential; a revoked or
 // never-generated token 404s, same as an unknown id would.
 export default async function SharedQuotationPage({

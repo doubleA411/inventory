@@ -123,7 +123,7 @@ export async function listProducts(
         isActive: products.isActive,
       })
       .from(products)
-      .leftJoin(categories, eq(products.categoryId, categories.id))
+      .leftJoin(categories, and(eq(products.categoryId, categories.id), eq(categories.organizationId, products.organizationId)))
       .innerJoin(units, eq(products.stockUnitId, units.id))
       .where(and(eq(products.organizationId, orgId), isNull(products.deletedAt)))
       .orderBy(asc(products.name)),
@@ -196,7 +196,7 @@ export async function getProductDetail(orgId: string, id: string) {
       .from(stockMovements)
       .innerJoin(units, eq(stockMovements.unitId, units.id))
       .leftJoin(users, eq(stockMovements.userId, users.id))
-      .leftJoin(invoices, eq(stockMovements.invoiceId, invoices.id))
+      .leftJoin(invoices, and(eq(stockMovements.invoiceId, invoices.id), eq(invoices.organizationId, stockMovements.organizationId)))
       .where(eq(stockMovements.productId, id))
       .orderBy(desc(stockMovements.createdAt))
       .limit(50),
@@ -333,7 +333,7 @@ export async function listAllMovements(
     .innerJoin(products, eq(stockMovements.productId, products.id))
     .innerJoin(units, eq(stockMovements.unitId, units.id))
     .leftJoin(users, eq(stockMovements.userId, users.id))
-    .leftJoin(invoices, eq(stockMovements.invoiceId, invoices.id))
+    .leftJoin(invoices, and(eq(stockMovements.invoiceId, invoices.id), eq(invoices.organizationId, stockMovements.organizationId)))
     .where(and(...conds))
     .orderBy(desc(stockMovements.createdAt))
     .limit(opts?.limit ?? 200);

@@ -21,6 +21,10 @@ function hashToken(raw: string): string {
  * not the email belongs to an account — callers must not use this to probe
  * for account existence.
  */
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
 export async function requestPasswordReset(email: string): Promise<void> {
   const clean = email.toLowerCase().trim();
   const [user] = await db.select().from(users).where(eq(users.email, clean)).limit(1);
@@ -43,7 +47,7 @@ export async function requestPasswordReset(email: string): Promise<void> {
     to: user.email,
     subject: "Reset your Stackwise password",
     html: `
-      <p>Hi ${user.name},</p>
+      <p>Hi ${escapeHtml(user.name)},</p>
       <p>Click the link below to reset your Stackwise password. This link expires in
       1 hour and can only be used once.</p>
       <p><a href="${link}">${link}</a></p>
@@ -81,13 +85,19 @@ export async function resetPassword(
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  await db.transaction(async (tx) => {
-    await tx.update(users).set({ passwordHash }).where(eq(users.id, row.userId));
-    await tx
+  // Consume the token first and only if it's still unused, so two submissions
+  // of the same link racing each other can't both set a password.
+  const consumed = await db.transaction(async (tx) => {
+    const claimed = await tx
       .update(passwordResetTokens)
       .set({ usedAt: new Date() })
-      .where(eq(passwordResetTokens.id, row.id));
+      .where(and(eq(passwordResetTokens.id, row.id), isNull(passwordResetTokens.usedAt)))
+      .returning({ id: passwordResetTokens.id });
+    if (!claimed.length) return false;
+    await tx.update(users).set({ passwordHash }).where(eq(users.id, row.userId));
+    return true;
   });
+  if (!consumed) return { ok: false, error: "This reset link has already been used." };
   await recordUserAudit(row.userId, {
     action: "auth.password_reset",
     summary: "Reset their password using an emailed link",

@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { foreignRefError } from "@/lib/tenant";
 import { purchaseLists, purchaseListItems, type Organization } from "@/lib/db/schema";
 import { financialYear, formatDocNumber } from "@/lib/tax";
 import { dateInTimeZone } from "@/lib/utils";
@@ -37,6 +38,11 @@ export async function createPurchaseListCore(
   if (d.items.length === 0) {
     return { ok: false, error: "Add at least one item." };
   }
+  const refError = await foreignRefError(org.id, {
+    vendor: d.vendorId,
+    product: d.items.map((i) => i.productId),
+  });
+  if (refError) return { ok: false, error: refError };
 
   try {
     const id = await db.transaction(async (tx) => {
@@ -101,6 +107,11 @@ export async function updatePurchaseListCore(
   if (d.items.length === 0) {
     return { ok: false, error: "Add at least one item." };
   }
+  const refError = await foreignRefError(orgId, {
+    vendor: d.vendorId,
+    product: d.items.map((i) => i.productId),
+  });
+  if (refError) return { ok: false, error: refError };
 
   const [existing] = await db
     .select({ status: purchaseLists.status })

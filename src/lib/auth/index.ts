@@ -80,6 +80,9 @@ export async function requireRole(min: Role): Promise<AuthContext> {
 
 // --- credential helpers -----------------------------------------------------
 
+// A bcrypt hash of a random string, cost 10 like real hashes.
+const DUMMY_HASH = "$2b$10$7LCOvnbi80HDD7OZtkp0j.VQYn8h91UnFnDkpN9m9VwqKJhqeWoRq";
+
 export async function login(
   email: string,
   password: string,
@@ -89,7 +92,12 @@ export async function login(
     .from(users)
     .where(eq(users.email, email.toLowerCase().trim()))
     .limit(1);
-  if (!user) return { ok: false, error: "Invalid email or password." };
+  if (!user) {
+    // Spend the same bcrypt time as a real check, so response timing can't
+    // tell a registered email from an unknown one.
+    await bcrypt.compare(password, DUMMY_HASH);
+    return { ok: false, error: "Invalid email or password." };
+  }
 
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {

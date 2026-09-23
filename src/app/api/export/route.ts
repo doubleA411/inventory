@@ -29,6 +29,11 @@ function safeRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
   );
 }
 
+/** Only a real YYYY-MM-DD reaches the ::date cast; anything else is ignored. */
+function isoDate(v: string | null): string | undefined {
+  return v && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) ? v : undefined;
+}
+
 export async function GET(req: NextRequest) {
   const ctx = await getAuthContext();
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -82,8 +87,8 @@ export async function GET(req: NextRequest) {
       limit: 10000,
       type: p.get("mtype") ?? undefined,
       categoryId: p.get("category") ?? undefined,
-      from: p.get("from") ?? undefined,
-      to: p.get("to") ?? undefined,
+      from: isoDate(p.get("from")),
+      to: isoDate(p.get("to")),
     });
     rows = movements.map((m) => ({
       Date: fmtDate(m.createdAt),

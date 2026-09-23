@@ -13,6 +13,7 @@ import {
   ALLOWED_IMAGE_TYPES,
   ALLOWED_LETTERHEAD_TYPES,
   MAX_UPLOAD_BYTES,
+  contentMatchesType,
 } from "@/lib/storage";
 
 export type ActionState = { error?: string; ok?: boolean };
@@ -21,6 +22,8 @@ function str(v: FormDataEntryValue | null): string | null {
   const s = v == null ? "" : String(v).trim();
   return s.length ? s : null;
 }
+
+const BANK_FIELDS = ["bankName", "bankAccountName", "bankAccount", "bankIfsc", "bankUpi"] as const;
 
 const settingsSchema = z.object({
   name: z.string().trim().min(1, "Company name is required"),
@@ -52,7 +55,7 @@ export async function updateSettingsAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { organization, user } = await requireRole("admin");
+  const { organization, user, role } = await requireRole("admin");
   const parsed = settingsSchema.safeParse({
     name: formData.get("name"),
     legalName: str(formData.get("legalName")),
@@ -85,6 +88,16 @@ export async function updateSettingsAction(
 
   if (d.gstRegistered && !d.gstin) {
     return { error: "GSTIN is required when the business is GST-registered." };
+  }
+
+  // Where customers send money is printed on invoices the owner has already
+  // approved, so only the owner may change it — otherwise an admin could
+  // redirect payments on every approved invoice and live share link.
+  if (role !== "owner") {
+    const same = (a: string | null | undefined, b: string | null | undefined) =>
+      (a ?? "") === (b ?? "");
+    const bankChanged = BANK_FIELDS.some((k) => !same(d[k], organization[k]));
+    if (bankChanged) return { error: "Only the owner can change bank or UPI details." };
   }
 
   await db
@@ -151,7 +164,8 @@ export async function saveLetterheadMargins(
   docTitleTop: number,
 ): Promise<ActionState> {
   const { organization, user } = await requireRole("admin");
-  const clamp = (n: number) => Math.max(0, Math.min(700, Math.round(n)));
+  const clamp = (n: number) =>
+    Number.isFinite(n) ? Math.max(0, Math.min(700, Math.round(n))) : 0;
   await db
     .update(organizations)
     .set({
@@ -225,7 +239,7 @@ export async function uploadAssetAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { organization, user } = await requireRole("admin");
+  const { organization, user, role } = await requireRole("admin");
   // `field` arrives as an ordinary server-action argument, so it is caller
   // input rather than something the client component pins down — check it
   // against the allowlist's own keys before it is used as a column name below.
@@ -233,6 +247,10 @@ export async function uploadAssetAction(
     return { error: "Unknown asset." };
   }
   const cfg = ASSET_FIELDS[field];
+  // The signature and letterhead appear on owner-approved documents.
+  if (field !== "logoUrl" && role !== "owner") {
+    return { error: "Only the owner can change the signature or letterhead." };
+  }
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
@@ -243,6 +261,10 @@ export async function uploadAssetAction(
   }
   if (file.size > MAX_UPLOAD_BYTES) {
     return { error: "File is too large (max 5 MB)." };
+  }
+  // The browser-reported type is just a claim; check the bytes agree.
+  if (!(await contentMatchesType(file))) {
+    return { error: "That file doesn't look like the image or PDF it claims to be." };
   }
 
   let url: string;

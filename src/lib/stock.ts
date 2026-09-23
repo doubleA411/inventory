@@ -10,6 +10,7 @@ import {
 } from "@/lib/db/schema";
 import { convertQuantity, roundQty } from "@/lib/units";
 import { writeAuditEvent } from "@/lib/audit";
+import { foreignRefError } from "@/lib/tenant";
 
 export type ApplyMovementInput = {
   organizationId: string;
@@ -84,8 +85,19 @@ export async function applyMovement(
             isNull(products.deletedAt),
           ),
         )
-        .limit(1);
+        .limit(1)
+        // Lock the product so movements against it run one at a time. FEFO
+        // reads batch balances and writes them back as absolute values; two
+        // concurrent usages would otherwise both draw the same stock.
+        .for("update");
       if (!product) return { ok: false as const, error: "Product not found." };
+
+      const refError = await foreignRefError(
+        input.organizationId,
+        { invoice: input.invoiceId, quotation: input.quotationId },
+        tx,
+      );
+      if (refError) return { ok: false as const, error: refError };
 
       // Fetch the stock unit and the movement's unit in one round trip
       // instead of two (they may be the same row when units match).

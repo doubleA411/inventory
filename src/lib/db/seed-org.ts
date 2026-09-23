@@ -1,7 +1,8 @@
 import { unitGroups, units, categories } from "./schema";
 import { DEFAULT_UNIT_PRESET, getIndustry } from "../industries";
 
-type DbClient = typeof import("./index")["db"];
+type Db = typeof import("./index")["db"];
+type DbClient = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 /**
  * Seed a freshly created organization with the default unit library and the

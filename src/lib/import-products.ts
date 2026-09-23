@@ -141,6 +141,12 @@ export async function importProducts(
     const reorder = num(r.reorderLevel) ?? 0;
     const cost = num(r.costPrice);
     const opening = num(r.openingStock) ?? 0;
+    // This path takes raw client JSON, not the product form's schema — enforce
+    // the same "nothing negative" rule, or a negative cost skews valuation.
+    if (reorder < 0 || opening < 0 || (cost != null && cost < 0)) {
+      errors.push({ row: rowNum, message: "Quantities and prices can't be negative." });
+      return;
+    }
 
     try {
       const [product] = await db

@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { resetPassword, type ResetResult } from "@/lib/password-reset";
+import { allowAttempt, clientIp, HOUR } from "@/lib/rate-limit";
 
 export type ResetPasswordState = { ok?: boolean; error?: string };
 
@@ -24,6 +25,9 @@ export async function resetPasswordAction(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const d = parsed.data;
+  if (!(await allowAttempt([{ key: `reset-submit:ip:${await clientIp()}`, limit: 20, windowSeconds: HOUR }]))) {
+    return { error: "Too many attempts. Wait an hour and try again." };
+  }
   if (d.password !== d.confirmPassword) {
     return { error: "Passwords don't match." };
   }

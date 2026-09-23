@@ -50,6 +50,7 @@ export async function listVendors(orgId: string) {
       purchaseBills,
       and(
         eq(purchaseBills.vendorId, vendors.id),
+        eq(purchaseBills.organizationId, vendors.organizationId),
         eq(purchaseBills.status, "active"),
         isNull(purchaseBills.deletedAt),
       ),

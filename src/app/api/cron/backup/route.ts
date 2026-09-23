@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { hasCronSecret } from "@/lib/cron-auth";
 import { db } from "@/lib/db";
 import { organizations } from "@/lib/db/schema";
 import { buildBackup } from "@/lib/backup";
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
   if (!secret) {
     return NextResponse.json({ error: "CRON_SECRET not configured" }, { status: 500 });
   }
-  if (req.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!hasCronSecret(req.headers.get("authorization"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

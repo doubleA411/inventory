@@ -309,6 +309,7 @@ export function ProductsTable({
         units={units}
         vendors={vendors}
         events={events}
+        canRecordPayment={canEdit}
         onClose={closeQuick}
       />
     </div>

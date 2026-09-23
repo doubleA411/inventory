@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { users, organizations, memberships } from "@/lib/db/schema";
 import { seedOrgDefaults } from "@/lib/db/seed-org";
 import { createSession } from "@/lib/auth/session";
+import { allowAttempt, clientIp, HOUR } from "@/lib/rate-limit";
 
 const signupSchema = z.object({
   name: z.string().trim().min(1, "Your name is required"),
@@ -35,6 +36,15 @@ export async function signupAction(
   }
   const d = parsed.data;
   const email = d.email.toLowerCase().trim();
+  // .local is the seed/demo domain — never a real mailbox, and letting someone
+  // register owner@catering.local in production would hand them the "demo".
+  if (/\.(local|localhost|test|invalid|example)$/.test(email.split("@")[1] ?? "")) {
+    return { error: "Enter a real email address." };
+  }
+
+  if (!(await allowAttempt([{ key: `signup:ip:${await clientIp()}`, limit: 5, windowSeconds: HOUR }]))) {
+    return { error: "Too many sign-ups from this network. Try again in an hour." };
+  }
 
   const existing = await db
     .select({ id: users.id })
@@ -45,30 +55,37 @@ export async function signupAction(
     return { error: "An account with that email already exists. Try signing in." };
   }
 
-  // Create org + owner user + membership, then seed industry defaults.
-  const [org] = await db
-    .insert(organizations)
-    .values({
-      name: d.companyName,
-      industry: d.industry,
-      currency: "INR",
-      timezone: "Asia/Kolkata",
-    })
-    .returning();
-
+  // Create org + owner user + membership, then seed industry defaults — all
+  // or nothing, so a failure halfway (say, two sign-ups racing for the same
+  // email) can't leave an orphan organization behind.
   const passwordHash = await bcrypt.hash(d.password, 10);
-  const [user] = await db
-    .insert(users)
-    .values({ email, passwordHash, name: d.name })
-    .returning();
-
-  await db.insert(memberships).values({
-    userId: user.id,
-    organizationId: org.id,
-    role: "owner",
-  });
-
-  await seedOrgDefaults(db, org.id, d.industry);
+  let user: { id: string; email: string; passwordHash: string };
+  try {
+    user = await db.transaction(async (tx) => {
+      const [org] = await tx
+        .insert(organizations)
+        .values({
+          name: d.companyName,
+          industry: d.industry,
+          currency: "INR",
+          timezone: "Asia/Kolkata",
+        })
+        .returning();
+      const [u] = await tx
+        .insert(users)
+        .values({ email, passwordHash, name: d.name })
+        .returning();
+      await tx.insert(memberships).values({
+        userId: u.id,
+        organizationId: org.id,
+        role: "owner",
+      });
+      await seedOrgDefaults(tx, org.id, d.industry);
+      return u;
+    });
+  } catch {
+    return { error: "Could not create the workspace. If you already have an account, sign in." };
+  }
 
   await createSession({
     userId: user.id,

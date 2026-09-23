@@ -83,6 +83,20 @@ describe("applyMovement (FEFO + conversion + ledger)", () => {
     }
   });
 
+  it("never draws the same stock twice when usages arrive at the same moment", async () => {
+    const pid = await makeProduct(`RACE-${Date.now()}`, kgId);
+    await applyMovement({ organizationId: orgId, productId: pid, type: "restock", quantity: 10, unitId: kgId });
+    const results = await Promise.all(
+      [1, 2, 3].map(() =>
+        applyMovement({ organizationId: orgId, productId: pid, type: "usage", quantity: 4, unitId: kgId }),
+      ),
+    );
+    // 10 on hand covers two 4 kg usages; the third must be refused.
+    expect(results.filter((r) => r.ok)).toHaveLength(2);
+    const [p] = await db.select().from(products).where(eq(products.id, pid));
+    expect(Number(p.currentStock)).toBe(2);
+  });
+
   it("restock adds stock and creates a batch balance", async () => {
     const pid = await makeProduct(`RS-${Date.now()}`, kgId);
     const r = await applyMovement({

@@ -31,10 +31,13 @@ export default async function LoginPage() {
             Create a workspace
           </Link>
         </p>
-        <p className="mt-3 text-center text-xs text-(--color-muted)">
-          Demo login: <span className="font-mono">owner@catering.local</span> /{" "}
-          <span className="font-mono">password123</span>
-        </p>
+        {/* The seeded demo account exists only in local databases. */}
+        {process.env.NODE_ENV !== "production" && (
+          <p className="mt-3 text-center text-xs text-(--color-muted)">
+            Demo login: <span className="font-mono">owner@catering.local</span> /{" "}
+            <span className="font-mono">password123</span>
+          </p>
+        )}
       </div>
     </div>
   );

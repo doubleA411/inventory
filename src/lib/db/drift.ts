@@ -26,18 +26,23 @@ export async function findSchemaDrift(): Promise<SchemaDrift[]> {
   const tables = exported.filter((v): v is PgTable => is(v, PgTable));
   const enums = exported.filter(isPgEnum);
 
-  const [columnRows, enumRows] = await Promise.all([
-    db.execute<{ table_name: string; column_name: string }>(
-      sql`select table_name, column_name from information_schema.columns where table_schema = 'public'`,
-    ),
-    db.execute<{ enum_name: string; enum_value: string }>(
-      sql`select t.typname as enum_name, e.enumlabel as enum_value
-          from pg_type t
-          join pg_enum e on e.enumtypid = t.oid
-          join pg_namespace n on n.oid = t.typnamespace
-          where n.nspname = 'public'`,
-    ),
-  ]);
+  // Sequential, not Promise.all: the serverless client holds one connection,
+  // and pipelining two catalog queries through Supabase's transaction pooler
+  // produced an empty result (reported as "everything missing") followed by
+  // hung requests.
+  const columnRows = await db.execute<{ table_name: string; column_name: string }>(
+    sql`select table_name, column_name from information_schema.columns where table_schema = 'public'`,
+  );
+  const enumRows = await db.execute<{ enum_name: string; enum_value: string }>(
+    sql`select t.typname as enum_name, e.enumlabel as enum_value
+        from pg_type t
+        join pg_enum e on e.enumtypid = t.oid
+        join pg_namespace n on n.oid = t.typnamespace
+        where n.nspname = 'public'`,
+  );
+  // An empty catalog means the query didn't see the schema at all (wrong
+  // search path, pooler hiccup) — not that every column is missing.
+  if (columnRows.length === 0) throw new Error("catalog query returned no columns");
 
   const actualColumns = new Set<string>();
   for (const r of columnRows) actualColumns.add(`${r.table_name}.${r.column_name}`);

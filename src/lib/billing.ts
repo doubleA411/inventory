@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   invoices,
@@ -15,6 +15,7 @@ import { computeTotals, financialYear, formatDocNumber, round2 } from "@/lib/tax
 import { dateInTimeZone, fmtMoney } from "@/lib/utils";
 import { logActivity, actorName } from "@/lib/activity";
 import { writeAuditEvent } from "@/lib/audit";
+import { foreignRefError } from "@/lib/tenant";
 
 // Menu dish names and an event/function date under a line item — printed as
 // a menu page ahead of the priced document. Not used for pricing.
@@ -83,6 +84,14 @@ export type PaymentInput = z.infer<typeof paymentSchema>;
 
 export type SaveResult = { ok: true; id: string } | { ok: false; error: string };
 
+/**
+ * Thrown inside a save transaction when the document to update isn't this
+ * organization's (or is archived). Line items are keyed by document id alone,
+ * so the header update matching zero rows must stop the save before the
+ * items are touched — otherwise another org's items get replaced.
+ */
+class DocumentNotFound extends Error {}
+
 async function placeOfSupply(
   org: Organization,
   customerId: string | null | undefined,
@@ -120,6 +129,12 @@ export async function saveInvoiceCore(
     return { ok: false, error: "Add at least one line item." };
   }
 
+  const refError = await foreignRefError(org.id, {
+    customer: d.customerId,
+    quotation: d.quotationId,
+  });
+  if (refError) return { ok: false, error: refError };
+
   const { placeCode, intraState } = await placeOfSupply(org, d.customerId);
   const gstEnabled = org.gstRegistered ? (d.applyGst ?? true) : false;
   const totals = computeTotals(
@@ -133,7 +148,7 @@ export async function saveInvoiceCore(
       let invoiceId = d.id;
 
       if (invoiceId) {
-        await tx
+        const updated = await tx
           .update(invoices)
           .set({
             customerId: d.customerId ?? null,
@@ -162,7 +177,9 @@ export async function saveInvoiceCore(
               eq(invoices.organizationId, org.id),
               isNull(invoices.deletedAt),
             ),
-          );
+          )
+          .returning({ id: invoices.id });
+        if (!updated.length) throw new DocumentNotFound();
         await tx.delete(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
       } else {
         const fy = financialYear();
@@ -228,7 +245,8 @@ export async function saveInvoiceCore(
     });
 
     return { ok: true, id };
-  } catch {
+  } catch (e) {
+    if (e instanceof DocumentNotFound) return { ok: false, error: "That invoice no longer exists." };
     return { ok: false, error: "Could not save the invoice." };
   }
 }
@@ -342,43 +360,51 @@ export async function recordPaymentCore(
   }
   const d = parsed.data;
 
-  const [inv] = await db
-    .select()
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.id, d.invoiceId),
-        eq(invoices.organizationId, orgId),
-        isNull(invoices.deletedAt),
-      ),
-    )
-    .limit(1);
-  if (!inv) return { ok: false, error: "Invoice not found." };
+  // The invoice row is read and locked inside the transaction. Reading it
+  // outside meant two payments recorded at the same moment both passed the
+  // "due" check against the same stale amountPaid, and the second write lost
+  // the first one's amount.
+  return db.transaction(async (tx): Promise<PaymentResult> => {
+    const [inv] = await tx
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.id, d.invoiceId),
+          eq(invoices.organizationId, orgId),
+          isNull(invoices.deletedAt),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    if (!inv) return { ok: false, error: "Invoice not found." };
 
-  const due = round2(Number(inv.total) - Number(inv.amountPaid));
-  if (!opts.allowOverpayment && d.amount > due) {
-    return {
-      ok: false,
-      error:
-        due > 0
-          ? `That's more than the ${fmtMoney(due)} still due on this bill.`
-          : "This bill is already fully paid.",
-      overpayment: { due, amount: d.amount },
-    };
-  }
+    const due = round2(Number(inv.total) - Number(inv.amountPaid));
+    if (!opts.allowOverpayment && d.amount > due) {
+      return {
+        ok: false,
+        error:
+          due > 0
+            ? `That's more than the ${fmtMoney(due)} still due on this bill.`
+            : "This bill is already fully paid.",
+        overpayment: { due, amount: d.amount },
+      };
+    }
 
-  await db.transaction(async (tx) => {
-    const [paymentRow] = await tx.insert(payments).values({
-      organizationId: orgId,
-      invoiceId: d.invoiceId,
-      amount: String(d.amount),
-      method: d.method,
-      reference: d.reference || null,
-      paidAt: d.paidAt || undefined,
-      note: d.note || null,
-      createdBy: userId,
-    }).returning({ id: payments.id });
-    const newPaid = Number(inv.amountPaid) + d.amount;
+    const [paymentRow] = await tx
+      .insert(payments)
+      .values({
+        organizationId: orgId,
+        invoiceId: d.invoiceId,
+        amount: String(d.amount),
+        method: d.method,
+        reference: d.reference || null,
+        paidAt: d.paidAt || undefined,
+        note: d.note || null,
+        createdBy: userId,
+      })
+      .returning({ id: payments.id });
+    const newPaid = round2(Number(inv.amountPaid) + d.amount);
     const status =
       newPaid >= Number(inv.total) ? "paid" : inv.status === "draft" ? "sent" : inv.status;
     await tx
@@ -395,9 +421,8 @@ export async function recordPaymentCore(
       details: { amount: d.amount, method: d.method, reference: d.reference || null, paidAt: d.paidAt || null },
       actorUserId: userId,
     });
+    return { ok: true };
   });
-
-  return { ok: true };
 }
 
 /**
@@ -426,14 +451,16 @@ export async function reverseInvoicePaymentCore(
         .select()
         .from(payments)
         .where(and(eq(payments.id, paymentId), eq(payments.organizationId, orgId)))
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (!payment) return { ok: false as const, error: "That payment is no longer recorded." };
 
       const [inv] = await tx
         .select()
         .from(invoices)
         .where(eq(invoices.id, payment.invoiceId))
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (inv) {
         const amount = Number(payment.amount);
         const newPaid = Math.max(0, round2(Number(inv.amountPaid) - amount));
@@ -523,6 +550,9 @@ export async function saveQuotationCore(
     }
   }
 
+  const refError = await foreignRefError(org.id, { customer: d.customerId });
+  if (refError) return { ok: false, error: refError };
+
   const { placeCode, intraState } = await placeOfSupply(org, d.customerId);
   const gstEnabled = org.gstRegistered ? (d.applyGst ?? true) : false;
   const totals = computeTotals(
@@ -549,7 +579,7 @@ export async function saveQuotationCore(
       };
 
       if (quoteId) {
-        await tx
+        const updated = await tx
           .update(quotations)
           // editing an approved quotation clears approval — owner must re-approve
           .set({ ...common, approvedAt: null, approvedBy: null })
@@ -559,7 +589,9 @@ export async function saveQuotationCore(
               eq(quotations.organizationId, org.id),
               isNull(quotations.deletedAt),
             ),
-          );
+          )
+          .returning({ id: quotations.id });
+        if (!updated.length) throw new DocumentNotFound();
         await tx.delete(quotationItems).where(eq(quotationItems.quotationId, quoteId));
       } else {
         const fy = financialYear();
@@ -604,7 +636,8 @@ export async function saveQuotationCore(
     });
 
     return { ok: true, id };
-  } catch {
+  } catch (e) {
+    if (e instanceof DocumentNotFound) return { ok: false, error: "That quotation no longer exists." };
     return { ok: false, error: "Could not save the quotation." };
   }
 }
@@ -773,6 +806,25 @@ export async function convertToInvoiceCore(
     return { ok: false, error: "This quotation needs owner approval before it can be converted." };
   }
 
+  // Claim the conversion atomically before creating anything. Without this a
+  // double-click (or two tabs) converted twice: two invoices, and the advance
+  // recorded as a payment on each. Only one request can flip the status.
+  const claimed = await db
+    .update(quotations)
+    .set({ status: "converted" })
+    .where(
+      and(
+        eq(quotations.id, id),
+        eq(quotations.organizationId, org.id),
+        ne(quotations.status, "converted"),
+        isNull(quotations.convertedInvoiceId),
+      ),
+    )
+    .returning({ id: quotations.id });
+  if (!claimed.length) {
+    return { ok: false, error: `${q.number} has already been converted to an invoice.` };
+  }
+
   const items = await db
     .select()
     .from(quotationItems)
@@ -797,11 +849,15 @@ export async function convertToInvoiceCore(
       eventDate: i.eventDate,
     })),
   });
-  if (!res.ok) return res;
+  if (!res.ok) {
+    // Release the claim so the user can fix the problem and try again.
+    await db.update(quotations).set({ status: q.status }).where(eq(quotations.id, id));
+    return res;
+  }
 
   await db
     .update(quotations)
-    .set({ status: "converted", convertedInvoiceId: res.id })
+    .set({ convertedInvoiceId: res.id })
     .where(eq(quotations.id, id));
 
   // Carry the booking advance over as the invoice's first payment — the

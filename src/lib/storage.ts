@@ -35,6 +35,25 @@ export const ALLOWED_IMAGE_TYPES = [
 export const ALLOWED_LETTERHEAD_TYPES = [...ALLOWED_IMAGE_TYPES, "application/pdf"];
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 
+/** True when the file's leading bytes match its declared (allowlisted) type. */
+export async function contentMatchesType(file: File): Promise<boolean> {
+  const b = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  const starts = (...sig: number[]) => sig.every((v, i) => b[i] === v);
+  switch (file.type) {
+    case "image/png":
+      return starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+    case "image/jpeg":
+    case "image/jpg":
+      return starts(0xff, 0xd8, 0xff);
+    case "image/webp":
+      return starts(0x52, 0x49, 0x46, 0x46) && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50;
+    case "application/pdf":
+      return starts(0x25, 0x50, 0x44, 0x46, 0x2d);
+    default:
+      return false;
+  }
+}
+
 /**
  * Extension for the stored key. Derived from the (already allowlisted)
  * content type rather than the uploader's filename — a filename extension is

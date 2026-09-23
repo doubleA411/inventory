@@ -51,7 +51,7 @@ export async function listAllPurchaseLists(orgId: string) {
       vendorName: vendors.name,
     })
     .from(purchaseLists)
-    .leftJoin(vendors, eq(purchaseLists.vendorId, vendors.id))
+    .leftJoin(vendors, and(eq(purchaseLists.vendorId, vendors.id), eq(vendors.organizationId, purchaseLists.organizationId)))
     .where(and(eq(purchaseLists.organizationId, orgId), isNull(purchaseLists.deletedAt)))
     .orderBy(desc(purchaseLists.createdAt));
 }

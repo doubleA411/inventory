@@ -20,6 +20,7 @@ import { financialYear, formatDocNumber } from "@/lib/tax";
 import { dateInTimeZone, fmtMoney } from "@/lib/utils";
 import { logActivity, actorName } from "@/lib/activity";
 import { auditLabel, writeAuditEvent } from "@/lib/audit";
+import { foreignRefError } from "@/lib/tenant";
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -75,6 +76,13 @@ export async function createPurchaseBillCore(
   if (d.items.length === 0) {
     return { ok: false, error: "Add at least one line item." };
   }
+
+  const refError = await foreignRefError(org.id, {
+    vendor: d.vendorId,
+    product: d.items.flatMap((i) => (i.kind === "product" ? [i.productId] : [])),
+    unit: d.items.flatMap((i) => (i.kind === "product" ? [i.unitId] : [])),
+  });
+  if (refError) return { ok: false, error: refError };
 
   const lineAmounts = d.items.map((i) =>
     i.kind === "product" ? round2(i.quantity * i.rate) : round2(i.amount),
@@ -193,6 +201,23 @@ export async function deletePurchaseBillCore(
 export type RemoveBillItemMode = "unlink" | "delete_restock";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Lock a vendor's row for the rest of the transaction, and confirm it belongs
+ * to this organization. Every operation that moves a vendor's money takes
+ * this lock first, so payments, credit applications and reversals against one
+ * vendor run one at a time — each reads bill balances and writes them back,
+ * and two at once would lose one of the writes.
+ */
+async function lockVendor(tx: Tx, orgId: string, vendorId: string): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: vendors.id })
+    .from(vendors)
+    .where(and(eq(vendors.id, vendorId), eq(vendors.organizationId, orgId)))
+    .limit(1)
+    .for("update");
+  return !!row;
+}
 
 /**
  * Remove one line from an existing purchase bill.
@@ -444,7 +469,8 @@ export async function recordVendorPaymentCore(
   }
   const d = parsed.data;
 
-  await db.transaction(async (tx) => {
+  const found = await db.transaction(async (tx) => {
+    if (!(await lockVendor(tx, orgId, d.vendorId))) return false;
     const openBills = await tx
       .select()
       .from(purchaseBills)
@@ -561,8 +587,10 @@ export async function recordVendorPaymentCore(
       details: { amount: d.amount, method: d.method, reference: d.reference || null, paidAt: d.paidAt || null },
       actorUserId: userId,
     });
+    return true;
   });
 
+  if (!found) return { ok: false, error: "That vendor no longer exists." };
   return { ok: true };
 }
 
@@ -595,6 +623,9 @@ export async function applyVendorCreditCore(
 ): Promise<{ ok: true; applied: number; bills: number } | { ok: false; error: string }> {
   try {
     return await db.transaction(async (tx) => {
+      if (!(await lockVendor(tx, orgId, vendorId))) {
+        return { ok: false as const, error: "That vendor no longer exists." };
+      }
       const credits = await tx
         .select()
         .from(purchaseBillPayments)
@@ -715,6 +746,15 @@ export async function reverseVendorPaymentCore(
         )
         .limit(1);
       if (!payment) return { ok: false as const, error: "That payment is no longer recorded." };
+      // Vendor lock first — the same order every vendor-money operation takes
+      // it in — then re-check the row, in case a concurrent reversal won.
+      if (payment.vendorId) await lockVendor(tx, orgId, payment.vendorId);
+      const [stillThere] = await tx
+        .select({ id: purchaseBillPayments.id })
+        .from(purchaseBillPayments)
+        .where(eq(purchaseBillPayments.id, payment.id))
+        .for("update");
+      if (!stillThere) return { ok: false as const, error: "That payment is no longer recorded." };
 
       // Matched in JS rather than SQL: Postgres keeps createdAt to the
       // microsecond but the driver hands back a millisecond Date, so an
@@ -914,8 +954,11 @@ export async function createPurchaseBillForRestockCore(
     // Applied straight to this specific bill (not the general vendor
     // allocator) — the caller just created/appended to it and knows exactly
     // which bill "paid now" refers to, so there's no ambiguity to resolve.
-    const paidNow = input.paidNow;
+    // Never more than this line was worth: "paid now" pays for these goods,
+    // not an open-ended cash entry against the vendor.
+    const paidNow = Math.min(round2(input.paidNow), amount);
     await db.transaction(async (tx) => {
+      await lockVendor(tx, org.id, input.vendorId);
       const [bill] = await tx
         .select({ amountPaid: purchaseBills.amountPaid })
         .from(purchaseBills)
@@ -960,6 +1003,11 @@ export async function restockWithVendor(
     note?: string | null;
   },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  // Checked before any stock moves, so a bad vendor can't leave a restock
+  // behind with no bill.
+  const refError = await foreignRefError(org.id, { vendor: input.vendorId });
+  if (refError) return { ok: false, error: refError };
+
   const movement = await applyMovement({
     organizationId: org.id,
     productId: input.productId,
