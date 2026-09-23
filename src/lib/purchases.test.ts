@@ -23,6 +23,7 @@ import {
   recordVendorPaymentCore,
   reverseVendorPaymentCore,
   applyVendorCreditCore,
+  restoreVendorPaymentCore,
 } from "@/lib/purchases";
 
 describe("removePurchaseBillItemCore", () => {
@@ -298,7 +299,16 @@ describe("reverseVendorPaymentCore", () => {
     return result.id;
   }
 
+  /** Rows that still count toward the vendor — voided rows are kept but excluded. */
   async function paymentsFor(vendorId: string) {
+    return db
+      .select()
+      .from(purchaseBillPayments)
+      .where(and(eq(purchaseBillPayments.vendorId, vendorId), isNull(purchaseBillPayments.voidedAt)));
+  }
+
+  /** Every row ever written for the vendor, voided or not. */
+  async function allPaymentRowsFor(vendorId: string) {
     return db
       .select()
       .from(purchaseBillPayments)
@@ -575,5 +585,58 @@ describe("reverseVendorPaymentCore", () => {
     const again = await reverseVendorPaymentCore(org.id, userId, row.id);
     expect(again.ok).toBe(false);
     if (!again.ok) expect(again.error).toMatch(/no longer recorded/i);
+  });
+
+  it("keeps reversed rows, and restoring puts every allocation back on its bill", async () => {
+    const vendorId = await makeVendor();
+    const firstId = await makeBill(vendorId, 200);
+    const secondId = await makeBill(vendorId, 400);
+    await recordVendorPaymentCore(org.id, userId, { vendorId, amount: 600, method: "upi" });
+    const rows = await paymentsFor(vendorId);
+    expect((await reverseVendorPaymentCore(org.id, userId, rows[0].id)).ok).toBe(true);
+
+    const kept = await allPaymentRowsFor(vendorId);
+    expect(kept).toHaveLength(2);
+    expect(kept.every((r) => r.voidReason === "reversed" && r.voidedBy === userId)).toBe(true);
+
+    const restored = await restoreVendorPaymentCore(org.id, userId, rows[1].id);
+    expect(restored.ok).toBe(true);
+    if (restored.ok) expect(restored.amount).toBe(600);
+    const bills = await db
+      .select()
+      .from(purchaseBills)
+      .where(inArray(purchaseBills.id, [firstId, secondId]));
+    expect(bills.map((b) => Number(b.amountPaid)).sort((a, b) => a - b)).toEqual([200, 400]);
+    expect(await paymentsFor(vendorId)).toHaveLength(2);
+
+    // Restoring again is refused; reversing again works.
+    expect((await restoreVendorPaymentCore(org.id, userId, rows[0].id)).ok).toBe(false);
+    expect((await reverseVendorPaymentCore(org.id, userId, rows[0].id)).ok).toBe(true);
+    expect(await paymentsFor(vendorId)).toHaveLength(0);
+  });
+
+  it("voids spent credit instead of deleting it, re-issuing any unused remainder", async () => {
+    const vendorId = await makeVendor();
+    await recordVendorPaymentCore(org.id, userId, { vendorId, amount: 500, method: "cash" }); // all credit
+    const billId = await makeBill(vendorId, 300);
+
+    const applied = await applyVendorCreditCore(org.id, userId, vendorId);
+    expect(applied.ok).toBe(true);
+    if (applied.ok) expect(applied.applied).toBe(300);
+
+    const all = await allPaymentRowsFor(vendorId);
+    const spent = all.find((r) => r.voidReason === "credit_applied");
+    expect(Number(spent?.amount)).toBe(500); // original credit kept with its full amount
+    const live = await paymentsFor(vendorId);
+    const remainder = live.find((r) => r.appliedTo === "credit");
+    const settlement = live.find((r) => r.appliedTo === "bill");
+    expect(Number(remainder?.amount)).toBe(200);
+    expect(Number(settlement?.amount)).toBe(300);
+    const [bill] = await db.select().from(purchaseBills).where(eq(purchaseBills.id, billId));
+    expect(Number(bill.amountPaid)).toBe(300);
+
+    const totals = await vendorPaymentTotals(org.id, vendorId);
+    expect(totals.credit).toBe(200);
+    expect(totals.bill).toBe(300);
   });
 });

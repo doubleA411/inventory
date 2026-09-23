@@ -157,12 +157,12 @@ export default async function VendorDetailPage({
                 billId: p.billId,
                 billNumber: p.billNumber,
                 appliedToOpeningBalance: p.appliedTo === "opening_balance",
+                reversed: !!p.voidedAt,
               }))}
             />
             {activity.length > 0 && (
-              // Reversing a vendor payment deletes its rows outright, so
-              // without this the money leaves the ledger with no record of who
-              // took it off. Written by reverseVendorPaymentCore.
+              // Who reversed a vendor payment, and when. Written by
+              // reverseVendorPaymentCore.
               <div className="border-t border-(--color-border) px-4 py-3">
                 <div className="mb-2 text-xs font-medium uppercase tracking-wide text-(--color-muted)">
                   Changes to payments

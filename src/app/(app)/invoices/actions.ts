@@ -11,6 +11,7 @@ import {
   deleteInvoiceCore,
   recordPaymentCore,
   reverseInvoicePaymentCore,
+  restorePaymentCore,
   type InvoiceInput,
   type PaymentInput,
   type PaymentResult,
@@ -110,6 +111,21 @@ export async function reverseInvoicePayment(
 ): Promise<{ ok: true; amount: number } | { ok: false; error: string }> {
   const { organization, user } = await requireRole("admin");
   const result = await reverseInvoicePaymentCore(organization.id, user.id, paymentId);
+  if (result.ok) {
+    revalidatePath("/invoices");
+    revalidatePath(`/invoices/${invoiceId}`);
+    revalidatePath("/dashboard");
+  }
+  return result;
+}
+
+/** Put a reversed payment back on its invoice. */
+export async function restoreInvoicePayment(
+  paymentId: string,
+  invoiceId: string,
+): Promise<{ ok: true; amount: number } | { ok: false; error: string }> {
+  const { organization, user } = await requireRole("admin");
+  const result = await restorePaymentCore(organization.id, user.id, paymentId);
   if (result.ok) {
     revalidatePath("/invoices");
     revalidatePath(`/invoices/${invoiceId}`);

@@ -105,6 +105,7 @@ export async function listPaymentsForCustomer(orgId: string, customerId: string)
         eq(invoices.customerId, customerId),
         eq(payments.organizationId, orgId),
         isNull(invoices.deletedAt),
+        isNull(payments.reversedAt),
       ),
     )
     .orderBy(desc(payments.paidAt));
@@ -333,6 +334,8 @@ export async function getInvoiceFull(orgId: string, id: string) {
       paidAt: payments.paidAt,
       note: payments.note,
       userName: users.name,
+      // Reversed payments stay in the history (struck through, restorable).
+      reversedAt: payments.reversedAt,
     })
     .from(payments)
     .leftJoin(users, eq(payments.createdBy, users.id))

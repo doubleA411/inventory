@@ -3,9 +3,9 @@
 import { Fragment, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Undo2 } from "lucide-react";
+import { RotateCcw, Undo2 } from "lucide-react";
 import { fmtMoney, fmtDate } from "@/lib/utils";
-import { reverseVendorPayment } from "../actions";
+import { restoreVendorPayment, reverseVendorPayment } from "../actions";
 
 export type PaymentRow = {
   id: string;
@@ -18,6 +18,8 @@ export type PaymentRow = {
   billId: string | null;
   billNumber: string | null;
   appliedToOpeningBalance: boolean;
+  /** Reversed rows stay listed, struck through, and can be restored. */
+  reversed: boolean;
 };
 
 /**
@@ -47,11 +49,24 @@ export function VendorPaymentHistory({
   const recordings = useMemo(() => {
     const map = new Map<string, { rows: number; total: number }>();
     for (const p of payments) {
+      if (p.reversed) continue;
       const prev = map.get(p.recordedAt) ?? { rows: 0, total: 0 };
       map.set(p.recordedAt, { rows: prev.rows + 1, total: prev.total + Number(p.amount) });
     }
     return map;
   }, [payments]);
+
+  function restore(paymentId: string) {
+    setError(null);
+    start(async () => {
+      const result = await restoreVendorPayment(paymentId, vendorId);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
 
   function reverse(paymentId: string) {
     setError(null);
@@ -76,6 +91,7 @@ export function VendorPaymentHistory({
 
   return (
     <div className="overflow-x-auto">
+      {error && !openId && <p className="px-4 py-2 text-sm text-(--color-danger)">{error}</p>}
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-(--color-border) text-left text-xs uppercase tracking-wide text-(--color-muted)">
@@ -91,6 +107,32 @@ export function VendorPaymentHistory({
           {payments.map((p) => {
             const recording = recordings.get(p.recordedAt) ?? { rows: 1, total: Number(p.amount) };
             const open = openId === p.id;
+            if (p.reversed) {
+              return (
+                <tr key={p.id} className="text-(--color-muted)">
+                  <td className="px-4 py-2.5">{fmtDate(p.paidAt)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums line-through">
+                    {fmtMoney(p.amount, currency)}
+                  </td>
+                  <td className="px-4 py-2.5" colSpan={3}>
+                    Reversed — not counted
+                    {p.billNumber ? ` (was on ${p.billNumber})` : ""}
+                  </td>
+                  <td className="px-2 py-2.5 text-right">
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      disabled={pending}
+                      title="Restore this payment"
+                      onClick={() => restore(p.id)}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      <span className="sr-only">Restore payment</span>
+                    </button>
+                  </td>
+                </tr>
+              );
+            }
             return (
               <Fragment key={p.id}>
                 <tr className="hover:bg-(--color-bg)">
@@ -159,8 +201,8 @@ export function VendorPaymentHistory({
                           {recording.rows > 1 ? (
                             <>
                               This was recorded as one payment and split across {recording.rows}{" "}
-                              entries — all of them go, and every bill it paid goes back to being
-                              due.
+                              entries — all of them are reversed, and every bill it paid goes back
+                              to being due. You can restore it afterwards.
                             </>
                           ) : (
                             <>

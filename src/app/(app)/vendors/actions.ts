@@ -12,6 +12,7 @@ import { TAMIL_NADU_CODE } from "@/lib/india-states";
 import {
   recordVendorPaymentCore,
   reverseVendorPaymentCore,
+  restoreVendorPaymentCore,
   applyVendorCreditCore,
   type VendorPaymentInput,
 } from "@/lib/purchases";
@@ -218,6 +219,22 @@ export async function applyVendorCredit(
       actorUserId: user.id,
     });
   }
+  if (result.ok) {
+    revalidatePath(`/vendors/${vendorId}`);
+    revalidatePath("/vendors");
+    revalidatePath("/purchase-bills");
+    revalidatePath("/dashboard");
+  }
+  return result;
+}
+
+/** Undo a vendor payment reversal — see restoreVendorPaymentCore. */
+export async function restoreVendorPayment(
+  paymentId: string,
+  vendorId: string,
+): Promise<{ ok: true; amount: number } | { ok: false; error: string }> {
+  const { organization, user } = await requireRole("admin");
+  const result = await restoreVendorPaymentCore(organization.id, user.id, paymentId);
   if (result.ok) {
     revalidatePath(`/vendors/${vendorId}`);
     revalidatePath("/vendors");

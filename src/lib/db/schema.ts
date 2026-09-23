@@ -612,6 +612,10 @@ export const payments = pgTable(
     note: text("note"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // A reversed payment is kept, not deleted: it stops counting toward the
+    // invoice but stays in its history, and can be restored.
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+    reversedBy: uuid("reversed_by").references(() => users.id, { onDelete: "set null" }),
   },
   (t) => [index("payments_invoice_idx").on(t.invoiceId)],
 );
@@ -852,6 +856,12 @@ export const purchaseBillPayments = pgTable(
     note: text("note"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Rows are voided, never deleted. "reversed": the payment was undone (and
+    // can be restored). "credit_applied": this credit was spent on bills — the
+    // settlement rows carry the money forward, this row keeps the history.
+    voidedAt: timestamp("voided_at", { withTimezone: true }),
+    voidedBy: uuid("voided_by").references(() => users.id, { onDelete: "set null" }),
+    voidReason: text("void_reason"),
   },
   (t) => [
     index("purchase_bill_payments_bill_idx").on(t.purchaseBillId),

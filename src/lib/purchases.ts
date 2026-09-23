@@ -394,7 +394,9 @@ async function releaseOverpayment(
   const paid = await tx
     .select()
     .from(purchaseBillPayments)
-    .where(eq(purchaseBillPayments.purchaseBillId, bill.id))
+    .where(
+      and(eq(purchaseBillPayments.purchaseBillId, bill.id), isNull(purchaseBillPayments.voidedAt)),
+    )
     .orderBy(desc(purchaseBillPayments.paidAt), desc(purchaseBillPayments.createdAt));
 
   for (const p of paid) {
@@ -538,6 +540,7 @@ export async function recordVendorPaymentCore(
             eq(purchaseBillPayments.organizationId, orgId),
             eq(purchaseBillPayments.vendorId, d.vendorId),
             eq(purchaseBillPayments.appliedTo, "opening_balance"),
+            isNull(purchaseBillPayments.voidedAt),
           ),
         );
       const openingDue = round2(
@@ -634,6 +637,7 @@ export async function applyVendorCreditCore(
             eq(purchaseBillPayments.organizationId, orgId),
             eq(purchaseBillPayments.vendorId, vendorId),
             eq(purchaseBillPayments.appliedTo, "credit"),
+            isNull(purchaseBillPayments.voidedAt),
           ),
         )
         .orderBy(asc(purchaseBillPayments.paidAt), asc(purchaseBillPayments.createdAt));
@@ -691,19 +695,37 @@ export async function applyVendorCreditCore(
       }
 
       // Draw the applied total down across the credit rows, oldest first.
+      // A used credit row is voided, not deleted, so the vendor's history
+      // still shows the money that was handed over. A partly used row is
+      // voided too and its unused remainder re-issued as a fresh credit row —
+      // rewriting the amount in place would lose what the original was.
       let toDraw = applied;
+      const now = new Date();
       for (const credit of credits) {
         if (toDraw <= 0) break;
         const amount = Number(credit.amount);
         const take = round2(Math.min(amount, toDraw));
         toDraw = round2(toDraw - take);
-        if (take >= amount - 1e-9) {
-          await tx.delete(purchaseBillPayments).where(eq(purchaseBillPayments.id, credit.id));
-        } else {
-          await tx
-            .update(purchaseBillPayments)
-            .set({ amount: String(round2(amount - take)) })
-            .where(eq(purchaseBillPayments.id, credit.id));
+        await tx
+          .update(purchaseBillPayments)
+          .set({ voidedAt: now, voidedBy: userId, voidReason: "credit_applied" })
+          .where(eq(purchaseBillPayments.id, credit.id));
+        if (take < amount - 1e-9) {
+          await tx.insert(purchaseBillPayments).values({
+            organizationId: credit.organizationId,
+            vendorId: credit.vendorId,
+            purchaseBillId: null,
+            appliedTo: "credit",
+            amount: String(round2(amount - take)),
+            method: credit.method,
+            reference: credit.reference,
+            paidAt: credit.paidAt,
+            note: credit.note,
+            createdBy: credit.createdBy,
+            // Same createdAt as the original recording, so reversing that
+            // recording still finds the remainder (see reverseVendorPaymentCore).
+            createdAt: credit.createdAt,
+          });
         }
       }
 
@@ -742,6 +764,7 @@ export async function reverseVendorPaymentCore(
           and(
             eq(purchaseBillPayments.id, paymentId),
             eq(purchaseBillPayments.organizationId, orgId),
+            isNull(purchaseBillPayments.voidedAt),
           ),
         )
         .limit(1);
@@ -752,7 +775,7 @@ export async function reverseVendorPaymentCore(
       const [stillThere] = await tx
         .select({ id: purchaseBillPayments.id })
         .from(purchaseBillPayments)
-        .where(eq(purchaseBillPayments.id, payment.id))
+        .where(and(eq(purchaseBillPayments.id, payment.id), isNull(purchaseBillPayments.voidedAt)))
         .for("update");
       if (!stillThere) return { ok: false as const, error: "That payment is no longer recorded." };
 
@@ -768,6 +791,7 @@ export async function reverseVendorPaymentCore(
               and(
                 eq(purchaseBillPayments.organizationId, orgId),
                 eq(purchaseBillPayments.vendorId, payment.vendorId),
+                isNull(purchaseBillPayments.voidedAt),
               ),
             )
         : [payment];
@@ -776,13 +800,16 @@ export async function reverseVendorPaymentCore(
       );
 
       let amount = 0;
+      // One timestamp for the whole group: restoreVendorPaymentCore uses it to
+      // find exactly the rows this reversal voided.
+      const reversedAt = new Date();
       for (const row of group) {
         const rowAmount = Number(row.amount);
         amount = round2(amount + rowAmount);
 
         // Only a bill payment needs unwinding. An opening-balance chunk and a
         // credit chunk both had their effect *derived* from this row, so
-        // deleting it is the whole reversal — the vendor's openingBalance is
+        // voiding it is the whole reversal — the vendor's openingBalance is
         // never written to, and what's left of it recomputes on the next read.
         if (row.appliedTo === "bill" && row.purchaseBillId) {
           const [bill] = await tx
@@ -800,12 +827,14 @@ export async function reverseVendorPaymentCore(
           }
         }
 
-        await tx.delete(purchaseBillPayments).where(eq(purchaseBillPayments.id, row.id));
+        await tx
+          .update(purchaseBillPayments)
+          .set({ voidedAt: reversedAt, voidedBy: userId, voidReason: "reversed" })
+          .where(eq(purchaseBillPayments.id, row.id));
       }
 
-      // Logged inside the transaction: the rows are gone once this commits,
-      // so without an entry here there is nothing left to say who took the
-      // money back off the vendor's ledger, or when.
+      // Logged inside the transaction, so the vendor page can say who took the
+      // money back off the ledger, and when.
       await logActivity(tx, {
         orgId,
         action: "vendor_payment_reversed",
@@ -836,6 +865,101 @@ export async function reverseVendorPaymentCore(
     });
   } catch {
     return { ok: false, error: "Could not reverse that payment." };
+  }
+}
+
+/**
+ * Undo a vendor payment reversal: every row that reversal voided comes back,
+ * and bill allocations go back onto their bills. The group is the rows voided
+ * as "reversed" by the same reversal — same recording (createdAt) and the same
+ * void timestamp — so a payment reversed, restored and reversed again still
+ * restores cleanly.
+ */
+export async function restoreVendorPaymentCore(
+  orgId: string,
+  userId: string,
+  paymentId: string,
+): Promise<{ ok: true; amount: number; rows: number } | { ok: false; error: string }> {
+  try {
+    return await db.transaction(async (tx) => {
+      const [payment] = await tx
+        .select()
+        .from(purchaseBillPayments)
+        .where(
+          and(
+            eq(purchaseBillPayments.id, paymentId),
+            eq(purchaseBillPayments.organizationId, orgId),
+          ),
+        )
+        .limit(1);
+      if (!payment) return { ok: false as const, error: "That payment no longer exists." };
+      if (payment.voidReason !== "reversed" || !payment.voidedAt) {
+        return { ok: false as const, error: "That payment isn't reversed." };
+      }
+      if (payment.vendorId && !(await lockVendor(tx, orgId, payment.vendorId))) {
+        return { ok: false as const, error: "That vendor no longer exists." };
+      }
+
+      const candidates = payment.vendorId
+        ? await tx
+            .select()
+            .from(purchaseBillPayments)
+            .where(
+              and(
+                eq(purchaseBillPayments.organizationId, orgId),
+                eq(purchaseBillPayments.vendorId, payment.vendorId),
+                eq(purchaseBillPayments.voidReason, "reversed"),
+              ),
+            )
+            .for("update")
+        : [payment];
+      const group = candidates.filter(
+        (r) =>
+          r.createdAt.getTime() === payment.createdAt.getTime() &&
+          r.voidedAt?.getTime() === payment.voidedAt!.getTime(),
+      );
+      if (!group.length) return { ok: false as const, error: "That payment isn't reversed." };
+
+      let amount = 0;
+      for (const row of group) {
+        const rowAmount = Number(row.amount);
+        amount = round2(amount + rowAmount);
+        if (row.appliedTo === "bill" && row.purchaseBillId) {
+          const [bill] = await tx
+            .select({ amountPaid: purchaseBills.amountPaid })
+            .from(purchaseBills)
+            .where(eq(purchaseBills.id, row.purchaseBillId))
+            .limit(1)
+            .for("update");
+          if (bill) {
+            await tx
+              .update(purchaseBills)
+              .set({ amountPaid: String(round2(Number(bill.amountPaid) + rowAmount)) })
+              .where(eq(purchaseBills.id, row.purchaseBillId));
+          }
+        }
+        await tx
+          .update(purchaseBillPayments)
+          .set({ voidedAt: null, voidedBy: null, voidReason: null })
+          .where(eq(purchaseBillPayments.id, row.id));
+      }
+
+      await writeAuditEvent(tx, {
+        orgId,
+        action: "vendor_payment.restored",
+        entityType: "vendor_payment",
+        entityId: payment.id,
+        entityLabel: payment.vendorId
+          ? await auditLabel(tx, orgId, "vendor", payment.vendorId)
+          : "Vendor payment",
+        summary: `Restored ${fmtMoney(amount)} vendor payment${group.length > 1 ? ` (${group.length} allocations)` : ""}`,
+        details: { amount, allocations: group.length, method: payment.method, reference: payment.reference },
+        actorUserId: userId,
+      });
+      return { ok: true as const, amount, rows: group.length };
+    });
+  } catch {
+    return { ok: false, error: "Could not restore that payment." };
   }
 }
 

@@ -8,6 +8,7 @@ import {
   customers,
   invoices,
   quotations,
+  payments,
   type Organization,
 } from "@/lib/db/schema";
 import {
@@ -17,6 +18,7 @@ import {
   revokeInvoiceApprovalCore,
   recordPaymentCore,
   reverseInvoicePaymentCore,
+  restorePaymentCore,
   deleteQuotationCore,
   deleteInvoiceCore,
   saveQuotationCore,
@@ -332,14 +334,59 @@ describe("billing (quotations, invoices, approvals, payments)", () => {
       expect(inv.status).toBe("sent"); // stepped back from "paid", not to "draft"
       expect(Number(inv.amountPaid)).toBe(0);
 
+      // Kept, not deleted — marked reversed so it stays in the history.
       const remaining = await db
         .select()
         .from(payments)
         .where(eq(payments.invoiceId, created.id));
-      expect(remaining).toHaveLength(0);
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].reversedAt).not.toBeNull();
+      expect(remaining[0].reversedBy).toBe(userId);
     });
 
-    it("reports a payment that is already gone instead of throwing", async () => {
+    it("restores a reversed payment onto its invoice", async () => {
+      const created = await saveInvoiceCore(gstOrg, userId, {
+        customerId: null,
+        issueDate: "2026-07-24",
+        items: [ITEM], // 1180
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+      await recordPaymentCore(gstOrg.id, userId, { invoiceId: created.id, amount: 1180, method: "upi" });
+      const [payment] = await db.select().from(payments).where(eq(payments.invoiceId, created.id));
+      expect((await reverseInvoicePaymentCore(gstOrg.id, userId, payment.id)).ok).toBe(true);
+
+      // Only-reversed payments don't block archiving, and don't count as paid.
+      const full = await getInvoiceFull(gstOrg.id, created.id);
+      expect(full?.payments).toHaveLength(1);
+      expect(full?.payments[0].reversedAt).not.toBeNull();
+
+      const restored = await restorePaymentCore(gstOrg.id, userId, payment.id);
+      expect(restored.ok).toBe(true);
+      const [inv] = await db.select().from(invoices).where(eq(invoices.id, created.id));
+      expect(Number(inv.amountPaid)).toBe(1180);
+      expect(inv.status).toBe("paid");
+      const [row] = await db.select().from(payments).where(eq(payments.id, payment.id));
+      expect(row.reversedAt).toBeNull();
+
+      expect((await restorePaymentCore(gstOrg.id, userId, payment.id)).ok).toBe(false);
+    });
+
+    it("archives an invoice whose only payments were reversed", async () => {
+      const created = await saveInvoiceCore(gstOrg, userId, {
+        customerId: null,
+        issueDate: "2026-07-24",
+        items: [ITEM],
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+      await recordPaymentCore(gstOrg.id, userId, { invoiceId: created.id, amount: 100, method: "cash" });
+      const [payment] = await db.select().from(payments).where(eq(payments.invoiceId, created.id));
+      await reverseInvoicePaymentCore(gstOrg.id, userId, payment.id);
+      expect((await deleteInvoiceCore(gstOrg.id, created.id, userId)).ok).toBe(true);
+    });
+
+    it("refuses to reverse the same payment twice", async () => {
       const created = await saveInvoiceCore(gstOrg, userId, {
         customerId: null,
         issueDate: "2026-07-24",
@@ -362,7 +409,7 @@ describe("billing (quotations, invoices, approvals, payments)", () => {
 
       const again = await reverseInvoicePaymentCore(gstOrg.id, userId, payment.id);
       expect(again.ok).toBe(false);
-      if (!again.ok) expect(again.error).toMatch(/no longer recorded/i);
+      if (!again.ok) expect(again.error).toMatch(/already been reversed/i);
     });
 
     it("refuses to delete an invoice that has payments recorded against it", async () => {

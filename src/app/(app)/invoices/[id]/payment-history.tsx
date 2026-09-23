@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Undo2 } from "lucide-react";
+import { RotateCcw, Undo2 } from "lucide-react";
 import { fmtMoney, fmtDate } from "@/lib/utils";
-import { reverseInvoicePayment } from "../actions";
+import { restoreInvoicePayment, reverseInvoicePayment } from "../actions";
 
 export type PaymentRow = {
   id: string;
@@ -13,13 +13,15 @@ export type PaymentRow = {
   reference: string | null;
   paidAt: string;
   note: string | null;
+  reversedAt: Date | null;
 };
 
 /**
  * Payment history, with a way to take a mistakenly recorded payment back off
  * the invoice. Unlike a vendor payment, an invoice payment is always exactly
  * one row against exactly one invoice — no splitting to undo — so reversing
- * just removes the row and gives the amount back to the balance due.
+ * just marks the row reversed and gives the amount back to the balance due.
+ * Reversed payments stay listed, struck through, with a way to restore them.
  */
 export function InvoicePaymentHistory({
   invoiceId,
@@ -34,6 +36,18 @@ export function InvoicePaymentHistory({
   const [pending, start] = useTransition();
   const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  function restore(paymentId: string) {
+    setError(null);
+    start(async () => {
+      const result = await restoreInvoicePayment(paymentId, invoiceId);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
 
   function reverse(paymentId: string) {
     setError(null);
@@ -58,8 +72,39 @@ export function InvoicePaymentHistory({
 
   return (
     <div className="divide-y divide-(--color-border)">
+      {error && !openId && (
+        <p className="px-4 py-2 text-sm text-(--color-danger)">{error}</p>
+      )}
       {payments.map((p) => {
         const open = openId === p.id;
+        if (p.reversedAt) {
+          return (
+            <div key={p.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
+              <div className="text-(--color-muted)">
+                <div className="font-medium tabular-nums line-through">
+                  {fmtMoney(p.amount, currency)}
+                </div>
+                <div className="text-xs capitalize">
+                  {p.method.replace("_", " ")} · {fmtDate(p.paidAt)}
+                  {p.reference ? ` · ${p.reference}` : ""}
+                </div>
+                <div className="mt-0.5 text-xs normal-case">
+                  Reversed {fmtDate(p.reversedAt)} — not counted toward this invoice
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-ghost"
+                disabled={pending}
+                title="Restore this payment"
+                onClick={() => restore(p.id)}
+              >
+                <RotateCcw className="h-4 w-4" />
+                <span className="sr-only">Restore payment</span>
+              </button>
+            </div>
+          );
+        }
         return (
           <div key={p.id}>
             <div className="flex items-center justify-between px-4 py-2.5 text-sm">

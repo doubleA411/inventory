@@ -318,7 +318,13 @@ export async function deleteInvoiceCore(
   const [{ count } = { count: 0 }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(payments)
-    .where(and(eq(payments.invoiceId, id), eq(payments.organizationId, orgId)));
+    .where(
+      and(
+        eq(payments.invoiceId, id),
+        eq(payments.organizationId, orgId),
+        isNull(payments.reversedAt),
+      ),
+    );
 
   if (count > 0 || Number(inv.amountPaid) > 0) {
     return {
@@ -429,16 +435,16 @@ export async function recordPaymentCore(
  * Undo a mistakenly recorded invoice payment. Unlike a vendor payment,
  * a customer payment is never split — it always lands as exactly one row
  * against exactly one invoice (see recordPaymentCore) — so reversing it is
- * just deleting that row and giving the amount back to the invoice's due.
+ * just marking that row reversed and giving the amount back to the invoice's
+ * due. The row is kept (history, and restorePaymentCore), never deleted.
  *
  * A status of "paid" only ever came from this money, so if removing it drops
  * the invoice back under its total, the status steps back to "sent" (never
  * back to "draft" — being sent doesn't undo). Any other status (including
  * "cancelled") is left alone.
  *
- * The payment row is deleted, so the reversal is written to the activity log
- * inside the same transaction — otherwise the money would leave the books with
- * no record of who took it off or when.
+ * The reversal is also written to the activity log inside the same
+ * transaction, so the invoice page can say who took the money off and when.
  */
 export async function reverseInvoicePaymentCore(
   orgId: string,
@@ -454,6 +460,9 @@ export async function reverseInvoicePaymentCore(
         .limit(1)
         .for("update");
       if (!payment) return { ok: false as const, error: "That payment is no longer recorded." };
+      if (payment.reversedAt) {
+        return { ok: false as const, error: "That payment has already been reversed." };
+      }
 
       const [inv] = await tx
         .select()
@@ -472,7 +481,10 @@ export async function reverseInvoicePaymentCore(
           .where(eq(invoices.id, inv.id));
       }
 
-      await tx.delete(payments).where(eq(payments.id, paymentId));
+      await tx
+        .update(payments)
+        .set({ reversedAt: new Date(), reversedBy: userId })
+        .where(eq(payments.id, paymentId));
 
       const amount = Number(payment.amount);
       await logActivity(tx, {
@@ -503,6 +515,72 @@ export async function reverseInvoicePaymentCore(
     });
   } catch {
     return { ok: false, error: "Could not reverse that payment." };
+  }
+}
+
+/**
+ * Put a reversed payment back on its invoice — the restore path for
+ * reverseInvoicePaymentCore. The amount counts toward the invoice again and
+ * the status moves forward the same way recording it did. Allowed even if it
+ * overpays: the money was really received, and the user is undoing a mistake.
+ */
+export async function restorePaymentCore(
+  orgId: string,
+  userId: string,
+  paymentId: string,
+): Promise<{ ok: true; amount: number } | { ok: false; error: string }> {
+  try {
+    return await db.transaction(async (tx) => {
+      const [payment] = await tx
+        .select()
+        .from(payments)
+        .where(and(eq(payments.id, paymentId), eq(payments.organizationId, orgId)))
+        .limit(1)
+        .for("update");
+      if (!payment) return { ok: false as const, error: "That payment no longer exists." };
+      if (!payment.reversedAt) return { ok: false as const, error: "That payment isn't reversed." };
+
+      const [inv] = await tx
+        .select()
+        .from(invoices)
+        .where(and(eq(invoices.id, payment.invoiceId), isNull(invoices.deletedAt)))
+        .limit(1)
+        .for("update");
+      if (!inv) return { ok: false as const, error: "That invoice no longer exists." };
+
+      const amount = Number(payment.amount);
+      const newPaid = round2(Number(inv.amountPaid) + amount);
+      const status =
+        inv.status === "cancelled"
+          ? inv.status
+          : newPaid >= Number(inv.total)
+            ? "paid"
+            : inv.status === "draft"
+              ? "sent"
+              : inv.status;
+      await tx
+        .update(invoices)
+        .set({ amountPaid: String(newPaid), status })
+        .where(eq(invoices.id, inv.id));
+      await tx
+        .update(payments)
+        .set({ reversedAt: null, reversedBy: null })
+        .where(eq(payments.id, payment.id));
+
+      await writeAuditEvent(tx, {
+        orgId,
+        action: "payment.restored",
+        entityType: "payment",
+        entityId: payment.id,
+        entityLabel: inv.number,
+        summary: `Restored ${fmtMoney(amount)} ${payment.method.replace("_", " ")} payment on ${inv.number}`,
+        details: { amount, method: payment.method, reference: payment.reference, paidAt: payment.paidAt },
+        actorUserId: userId,
+      });
+      return { ok: true as const, amount };
+    });
+  } catch {
+    return { ok: false, error: "Could not restore that payment." };
   }
 }
 

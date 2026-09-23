@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   vendors,
@@ -69,7 +69,9 @@ export async function listVendors(orgId: string) {
       total: sql<string>`coalesce(sum(${purchaseBillPayments.amount}), 0)`,
     })
     .from(purchaseBillPayments)
-    .where(eq(purchaseBillPayments.organizationId, orgId))
+    .where(
+      and(eq(purchaseBillPayments.organizationId, orgId), isNull(purchaseBillPayments.voidedAt)),
+    )
     .groupBy(purchaseBillPayments.vendorId, purchaseBillPayments.appliedTo);
 
   const splitFor = (vendorId: string, kind: string) =>
@@ -200,7 +202,9 @@ export async function getPurchaseBillFull(orgId: string, id: string) {
     })
     .from(purchaseBillPayments)
     .leftJoin(users, eq(purchaseBillPayments.createdBy, users.id))
-    .where(eq(purchaseBillPayments.purchaseBillId, id))
+    .where(
+      and(eq(purchaseBillPayments.purchaseBillId, id), isNull(purchaseBillPayments.voidedAt)),
+    )
     .orderBy(desc(purchaseBillPayments.paidAt));
   return { bill, items, vendor, payments: pays };
 }
@@ -274,6 +278,7 @@ export async function vendorPaymentTotals(orgId: string, vendorId: string) {
       and(
         eq(purchaseBillPayments.organizationId, orgId),
         eq(purchaseBillPayments.vendorId, vendorId),
+        isNull(purchaseBillPayments.voidedAt),
       ),
     )
     .groupBy(purchaseBillPayments.appliedTo);
@@ -329,12 +334,20 @@ export async function listPaymentsForVendor(orgId: string, vendorId: string) {
       billId: purchaseBills.id,
       billNumber: purchaseBills.number,
       userName: users.name,
+      voidedAt: purchaseBillPayments.voidedAt,
     })
     .from(purchaseBillPayments)
     .leftJoin(purchaseBills, eq(purchaseBillPayments.purchaseBillId, purchaseBills.id))
     .leftJoin(users, eq(purchaseBillPayments.createdBy, users.id))
     .where(
-      and(eq(purchaseBillPayments.organizationId, orgId), eq(purchaseBillPayments.vendorId, vendorId)),
+      and(
+        eq(purchaseBillPayments.organizationId, orgId),
+        eq(purchaseBillPayments.vendorId, vendorId),
+        // Live rows, plus reversed ones (shown struck through, restorable).
+        // Credit rows voided because they were spent stay out: the settlement
+        // rows they turned into already show that money.
+        or(isNull(purchaseBillPayments.voidedAt), eq(purchaseBillPayments.voidReason, "reversed")),
+      ),
     )
     .orderBy(desc(purchaseBillPayments.paidAt));
 }
